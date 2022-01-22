@@ -1,0 +1,28 @@
+{
+  "name": "simple-client",
+  "version": "0.1.0",
+  "author": "Jeremias Pettinen <hi@jeremi.as>",
+  "license": "ISC",
+  "type": "module",
+  "scripts": {
+    "build": "svelte-kit build",
+    "check": "svelte-check",
+    "check:watch": "svelte-check --watch",
+    "dev": "svelte-kit dev --port 55555",
+    "lint": "eslint src",
+    "preview": "svelte-kit preview --port 55555"
+  },
+  "devDependencies": {
+    "@sveltejs/adapter-node": "next",
+    "@sveltejs/kit": "next",
+    "@typescript-eslint/eslint-plugin": "^5.10.0",
+    "@typescript-eslint/parser": "^5.10.0",
+    "eslint": "^8.7.0",
+    "eslint-plugin-svelte3": "^3.4.0",
+    "svelte": "^3.46.2",
+    "svelte-check": "^2.3.0",
+    "svelte-preprocess": "^4.10.2",
+    "tslib": "^2.3.1",
+    "typescript": "^4.5.5"
+  }
+}
