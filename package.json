@@ -1,6 +1,7 @@
 {
   "name": "simple-client",
   "version": "0.1.0",
+  "description": "A Svelte authentication frontend for use as a base in other projects",
   "author": "Jeremias Pettinen <hi@jeremi.as>",
   "license": "ISC",
   "type": "module",
@@ -19,6 +20,9 @@
     "@typescript-eslint/parser": "^5.10.0",
     "eslint": "^8.7.0",
     "eslint-plugin-svelte3": "^3.4.0",
+    "material-icons": "^1.10.6",
+    "purecss": "^2.0.6",
+    "sass": "^1.49.0",
     "svelte": "^3.46.2",
     "svelte-check": "^2.3.0",
     "svelte-preprocess": "^4.10.2",

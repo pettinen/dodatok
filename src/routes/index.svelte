@@ -1,6 +1,9 @@
+<h1>oh shit this is a bretty long headline how are we gonna manage this oh noooo</h1>
+
 <script lang="ts">
-  const welcome = "die";
 </script>
 
-<h1>Welcome to {welcome}</h1>
-<p>Visit <a href="https://kit.svelte.dev">kit.svelte.dev</a> to read the documentation</p> 
+<style lang="sass">
+  p
+    font-family: sans-serif
+</style>
