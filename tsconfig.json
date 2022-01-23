@@ -1,16 +1,26 @@
 {
   "compilerOptions": {
+    "allowUnreachableCode": false,
+    "allowUnusedLabels": false,
+    "baseUrl": ".",
+    "exactOptionalPropertyTypes": true,
     "forceConsistentCasingInFileNames": true,
     "importsNotUsedAsValues": "error",
-    "isolatedModules": true,
-    "lib": ["DOM", "ES2021"],
-    "module": "ES2020",
+    "lib": ["ES2021"],
+    "module": "ES2022",
+    "newLine": "LF",
     "noEmit": true,
+    "noImplicitOverride": true,
+    "noImplicitReturns": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
     "paths": {
-      "$lib/*": ["./src/lib/*"]
+      "$lib/*": ["src/lib/*"]
     },
+    "removeComments": true,
     "sourceMap": true,
     "strict": true,
     "target": "ES2021"
-  }
+  },
+  "include": ["src"]
 }
