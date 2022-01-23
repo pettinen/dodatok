@@ -1,13 +1,13 @@
 <nav>
   {#if loginOpen}
-    <div bind:this={loginForm} class="login pure-form" transition:flyFullWidth>
-      <input placeholder="Username">
-      <input placeholder="Password">
+    <div class="login" transition:reveal={{ direction: "left", duration: 200 }}>
+      <IconInput bind:this={usernameInput} icon=person style="height: 50%;" placeholder={$_("login.username")} />
+      <IconInput type=password icon=password style="height: 50%;" placeholder={$_("login.password")} />
     </div>
   {/if}
-  <button bind:this={loginButton} class="pure-button pure-button-primary" on:click={toggleLogin}>
+  <button class="pure-button pure-button-primary" on:click={toggleLogin}>
     {#key loginOpen}
-      <span class="icon" in:in_={loginButtonKey} out:out={loginButtonKey}>
+      <span class="login-icon" in:in_ out:out>
         <span class=material-icons>{loginOpen ? "close" : "login"}</span>
       </span>
     {/key}
@@ -16,113 +16,129 @@
 <slot />
 
 <script lang="ts">
-  import "$lib/styles/globals.sass";
-  import "material-icons/iconfont/material-icons.css";
-  import "purecss";
+  import "$lib/i18n";
+  import { tick } from "svelte";
+  import { _ } from "svelte-i18n";
 
-  import { onMount } from "svelte";
-  import { fade, fly } from "svelte/transition";
+  import IconInput from "$lib/components/IconInput.svelte";
+
+  import "@fontsource/fira-sans/latin.css";
+  import "purecss";
+  import "material-icons/iconfont/material-icons.css";
 
   //import Menu from "$lib/Menu.svelte";
 
-  let loginButton: HTMLButtonElement;
-  let loginForm: HTMLDivElement;
-
   let loginOpen: boolean = false;
-  const toggleLogin = () => { loginOpen = !loginOpen; };
-  const loginButtonKey = Symbol();
-
-  let loginFormFlyDistance = 0;
-
-  onMount(() => {
-    const loginButtonRect = loginButton.getBoundingClientRect();
-    const loginFormRect = loginForm.getBoundingClientRect();
-    loginFormFlyDistance = loginButtonRect.width + loginFormRect.width;
-  });
-
-  const [in_, out] = function revealFromRight() {
-    const sending = new Map<string | symbol, DOMRect>();
-    const receiving = new Map<string | symbol, DOMRect>();
-
-    function reveal(node: HTMLElement, in_: boolean) {
-      const rect = node.getBoundingClientRect();
-      let css: (number, number) => string;
-      if (in_)
-        css = (t, u) => `clip: rect(auto, auto, auto, ${u * rect.width}px);`;
-      else {
-        css = (t, u) => `clip: rect(auto, ${t * rect.width}px, auto, auto);`;
-      }
-      return {
-        css,
-        delay: 0,
-        duration: 500,
-      };
+  let usernameInput: IconInput;
+  const toggleLogin = async (): void => {
+    loginOpen = !loginOpen;
+    if (loginOpen) {
+      await tick();
+      if (usernameInput)
+        usernameInput.focus();
     }
+  };
 
-    function transition(items: any, counterparts: any, in_: boolean) {
-      return (node: HTMLElement) => {
-        return reveal(node, in_);
-      };
-    }
-
-    return [transition(sending, receiving, true), transition(sending, receiving, false)];
-  }();
-
-  const flyFullWidth = function(node, params) {
-    const style = getComputedStyle(node);
-    console.log(style, params);
-    return {
-      css: (t, u) => `transform: translateX(${100 * u}%);`,
-      delay: 0,
-      duration: 200,
-    };
+  interface RevealParams {
+    direction: "top" | "right" | "bottom" | "left";
+    delay?: number;
+    duration?: number;
+    reverse?: boolean;
   }
 
+  const reveal = function(
+    node: HTMLElement,
+    { direction, delay = 0, duration = 300, reverse = false }: RevealParams
+  ) {
+    const width = node.getBoundingClientRect().width;
+    let directionIndex: number;
+    switch (direction) {
+      case "top":
+        directionIndex = 0;
+        break;
+      case "right":
+        directionIndex = 1;
+        break;
+      case "bottom":
+        directionIndex = 2;
+        break;
+      case "left":
+        directionIndex = 3;
+        break;
+      default:
+        throw new Error(`invalid direction: ${direction}`)
+    }
+    const css = (t: number, u: number) => {
+      const rectParams = ["auto", "auto", "auto"];
+      rectParams.splice(directionIndex, 0, `${(reverse ? t : u) * width}px`);
+      return `clip: rect(${rectParams.join(", ")})`;
+    }
+    return { css, delay, duration };
+  };
+
+  const [in_, out] = function crossReveal() {
+    const transition = (in_: boolean) => {
+      return (node: HTMLElement, _params: {}) => (
+        reveal(node, { direction: in_ ? "left": "right", reverse: !in_ })
+      );
+    }
+    return [transition(true), transition(false)];
+  }();
 </script>
 
-<style lang="sass">
-  $navbar-height: 3rem
+<style lang="scss">
+  $navbar-height: 5rem;
+  $login-icon-size: calc(0.6 * $navbar-height);
 
-  :global
-    body, html
-      height: 90%
-      margin: 0
-      padding: 0
-      width: 90%
+  :global {
+    :root {
+      font-size: 62.5%;
+    }
+    body {
+      font-family: "Fira Sans";
+      font-size: 1.6rem;
+      font-weight: 300;
+    }
+  }
 
-  nav
-    align-items: center
-    display: flex
-    height: $navbar-height
-    justify-content: flex-end
-    position: absolute
-    top: 0
-    right: 0
-    padding: 0
-    margin: 0
-  button
-    margin: 0
-    padding: 0
-    align-items: center
-    border-radius: 0
-    display: flex
-    height: $navbar-height
-    justify-content: center
-    width: $navbar-height
-    z-index: 10
-  .icon
-    position: absolute
-    transform: rotate(-45deg)
-  .login
-    align-items: center
-    display: flex
-    background-color: #444444
-    height: $navbar-height
-    padding: 0 15px 0 10px
+  nav {
+    align-items: center;
+    display: flex;
+    height: $navbar-height;
+    justify-content: flex-end;
+    position: absolute;
+    top: 0;
+    right: 0;
 
-    input
-      height: 80%
-  .material-icons
-    font-size: calc(0.6 * $navbar-height)
-    transform: rotate(45deg)
+    button {
+      align-items: center;
+      border-radius: 0;
+      display: flex;
+      height: $navbar-height;
+      justify-content: center;
+      width: $navbar-height;
+      z-index: 10;
+
+      .login-icon {
+        overflow: hidden;
+        position: absolute;
+        transform: rotate(-45deg);
+
+        span {
+          font-size: $login-icon-size;
+          transform: rotate(45deg);
+        }
+      }
+    }
+
+    .login {
+      align-items: center;
+      display: flex;
+      background-color: #444444;
+      height: $navbar-height;
+      padding: 0 1rem;
+      position: absolute;
+      right: $navbar-height;
+    }
+  }
 </style>
