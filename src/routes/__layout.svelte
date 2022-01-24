@@ -1,116 +1,151 @@
 <svelte:window on:load={onWindowLoad} />
 
-<nav>
-  {#if loginOpen}
-    <div
-      class=login-modal
-      in:reveal={{ direction: narrow ? "bottom" : "left", duration: 200 }}
-      out:reveal={{ direction: narrow ? "bottom" : "left", duration: 200 }}
-    >
-      {#if !narrow}
-        <button
-          class="close pure-button"
-          on:click={closeLogin}
-          title={_("login.close")}
-        >
-          <span class=material-icons>chevron_right</span>
-        </button>
-      {/if}
-      <div class=login-inputs>
-        <div class=login-input>
-          <IconTextInput
-            bind:this={usernameInput}
-            bind:value={username}
-            icon=person
-            placeholder={_("login.username")}
-          />
+{#if $isLoading}
+  chotto matte
+{:else}
+  <nav>
+    {#if loginOpen}
+      <div
+        class=login-modal
+        in:reveal={{ direction: narrow ? "bottom" : "left", duration: 200 }}
+        out:reveal={{ direction: narrow ? "bottom" : "left", duration: 200 }}
+      >
+        {#if !narrow}
+          <button
+            class="close pure-button"
+            on:click={closeLogin}
+            title={$_("login.close")}
+          >
+            <span class=material-icons>chevron_right</span>
+          </button>
+        {/if}
+        <div class=login-inputs>
+          <div class=login-input>
+            <IconTextInput
+              bind:this={usernameInput}
+              bind:value={username}
+              icon=person
+              placeholder={$_("login.username")}
+              on:input={handleUsernameInput}
+              on:keydown={handleUsernameKeydown}
+            />
+          </div>
+          <div class=login-input>
+            <IconPasswordInput
+              bind:this={passwordInput}
+              bind:value={password}
+              icon=password
+              placeholder={$_("login.password")}
+              on:keydown={handlePasswordInput}
+              on:keydown={handlePasswordKeydown}
+            />
+          </div>
         </div>
-        <div class=login-input>
-          <IconPasswordInput
-            bind:value={password}
-            icon=password
-            placeholder={_("login.password")}
-          />
-        </div>
+        {#if narrow}
+          <button
+            class="close narrow pure-button"
+            tabindex=1
+            title={$_("login.close")}
+            on:click={closeLogin}
+          >
+            <span class=material-icons>expand_less</span>
+          </button>
+        {/if}
       </div>
-      {#if narrow}
-        <button
-          class="close narrow pure-button"
-          on:click={closeLogin}
-          title={_("login.close")}
-        >
-          <span class=material-icons>expand_less</span>
-        </button>
-      {/if}
-    </div>
-  {/if}
-  <button
-    class="pure-button open-or-login-button"
-    class:login={loginOpen}
-    class:tall={narrow && loginOpen}
-    class:open={!loginOpen}
-    on:click={loginOrOpenLogin}
-  >
-    {#key loginOpen}
-      <span class=open-or-login-icon in:reveal={{ direction: "left" }} out:reveal={{ direction: "right" }}>
-        <span class=material-icons>{loginOpen ? "login" : "person"}</span>
-      </span>
-    {/key}
-  </button>
-</nav>
-<!--
-{#each ["magenta", "yellow", "green", "blue", "cyan", "red"] as color}
-<div class={color} style="height: 6rem; width: 100vw;">{color}</div>
-{/each}
--->
-<p>{_("test test")} {narrow}</p>
+    {/if}
+    <button
+      class="pure-button open-or-login-button"
+      class:login={loginOpen}
+      class:tall={narrow && loginOpen}
+      class:open={!loginOpen}
+      on:click={loginOrOpenLogin}
+    >
+      {#key loginOpen}
+        <span class=open-or-login-icon in:reveal={{ direction: "left" }} out:reveal={{ direction: "right" }}>
+          <span class=material-icons>{loginOpen ? "login" : "person"}</span>
+        </span>
+      {/key}
+    </button>
+  </nav>
 
-<slot />
+  <!--
+  {#each ["magenta", "yellow", "green", "blue", "cyan", "red"] as color}
+  <div class={color} style="height: 6rem; width: 100vw;">{color}</div>
+  {/each}
+  -->
+  <p>{$_("test test")} narrow: {narrow}</p>
+
+  <slot />
+
+  <p>Errors: {errors.join(",  ")}</p>
+{/if}
 
 <script lang="ts">
   import "$lib";
   import { tick, onMount } from "svelte";
-  import { format } from "svelte-i18n";
+  import { _, isLoading } from "svelte-i18n";
 
   import { browser } from "$app/env";
 
   import IconTextInput from "$lib/components/IconTextInput.svelte";
   import IconPasswordInput from "$lib/components/IconPasswordInput.svelte";
   import { reveal } from "$lib/transitions";
+  import { passwordRules, usernameRules, validate } from "$lib/validation";
 
   import "$lib/styles/main.scss";
   import "@fontsource/fira-sans/latin.css";
   import "purecss";
   import "material-icons/iconfont/material-icons.css";
 
-  $: _ = (messageID: string) => {
-    try {
-      return $format(messageID);
-    } catch {
-      return messageID;
-    }
-  };
-
+  let errors: string[] = [];
+  let loginOpen: boolean = false;
   let narrow = false;
+  let username = "";
+  let usernameInput: IconTextInput;
+  let password = "";
+  let passwordInput: IconPasswordInput;
+
   if (browser) {
-    const mediaQuery = matchMedia(`(width < 49rem)`);
-    narrow = mediaQuery.matches;
+    const mediaQuery = matchMedia(`(min-width: 49rem)`);
+    narrow = !mediaQuery.matches;
     mediaQuery.addEventListener("change", (event) => {
-      narrow = event.matches;
+      narrow = !event.matches;
     });
   }
 
-  const onWindowLoad = () => {
-    document.body.classList.remove("preload");
+  const handlePasswordInput = (event: InputEvent): void => {
+    const chars = [...password];
+    if (chars.length > passwordRules.maxLength)
+      password = chars.slice(0, passwordRules.maxLength).join("");
   };
 
-  let loginOpen: boolean = false;
-  let usernameInput: IconInput;
-  let username = "";
-  let password = "";
+  const handlePasswordKeydown = (event: KeyboardEvent): void => {
+    console.log("keydown");
+    if (event.key === "Enter")
+      login();
+  };
+
+  const handleUsernameInput = (event: InputEvent): void => {
+    const chars = [...username];
+    if (chars.length > usernameRules.maxLength)
+      username = chars.slice(0, usernameRules.maxLength).join("");
+  };
+
+  const handleUsernameKeydown = (event: KeyboardEvent): void => {
+    if (event.key === "Enter" && passwordInput)
+      passwordInput.focus();
+  };
 
   const closeLogin = (): void => {
     loginOpen = false;
+  };
+
+  const login = async () => {
+    validateLoginInputs();
+    console.log(errors);
+    if (errors.length)
+      return;
+    alert("lol");
   };
 
   const loginOrOpenLogin = async (): Promise<void> => {
@@ -124,13 +159,20 @@
     }
   };
 
-  const login = () => {
-    alert("lol");
+  const onWindowLoad = () => {
+    document.body.classList.remove("preload");
   };
+
+  const validateLoginInputs = (): boolean => {
+    errors = [];
+    username = username.trim();
+    errors.push(...validate(username, "login.username", usernameRules));
+    errors.push(...validate(password, "login.password", passwordRules));
+  }
 
 </script>
 
-<style lang="scss" module>
+<style lang="scss">
   @use "globals.scss" as g;
 
   nav {

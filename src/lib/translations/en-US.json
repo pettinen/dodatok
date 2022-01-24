@@ -4,5 +4,9 @@
     "username": "Username",
     "password": "Password"
   },
-  "test test": "TEST TEST"
+  "validation": {
+    "above-max-length": "{field} must be at most {maxLength} characters long",
+    "below-min-length": "{field} must be at least {minLength} characters long",
+    "empty": "{field} cannot be empty"
+  }
 }

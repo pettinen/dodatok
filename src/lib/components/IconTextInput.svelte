@@ -1,5 +1,11 @@
 <div>
-  <input bind:this={input} bind:value {placeholder}>
+  <input
+    bind:this={input}
+    bind:value
+    {...attrs}
+    on:input
+    on:keydown
+  >
   <span class=material-icons>{icon}</span>
 </div>
 
@@ -10,10 +16,14 @@
 
   let input: HTMLInputElement;
 
-  export function focus(): void {
+  $: attrs = {
+    placeholder,
+  };
+
+  export const focus = (): void => {
     if (input)
       input.focus();
-  }
+  };
 </script>
 
 <style lang="scss">

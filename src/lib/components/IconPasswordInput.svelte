@@ -1,8 +1,15 @@
 <div>
   {#if visible}
-    <input bind:this={input} bind:value {placeholder}>
+    <input bind:this={input} bind:value {...attrs} on:input on:keydown>
   {:else}
-    <input bind:this={input} bind:value {placeholder} type=password>
+    <input
+      bind:this={input}
+      bind:value
+      type=password
+      {...attrs}
+      on:input
+      on:keydown
+    >
   {/if}
   <span class="material-icons password-icon">password</span>
   <a class="material-icons visibility-icon" on:click={toggleVisible}>
@@ -19,6 +26,15 @@
 
   let input: HTMLInputElement;
   let visible = false;
+
+  $: attrs = {
+    placeholder,
+  };
+
+  export const focus = (): void => {
+    if (input)
+      input.focus();
+  };
 
   const toggleVisible = async (): void => {
     let selectionStart;
@@ -37,7 +53,6 @@
       input.focus();
     }
   };
-
 </script>
 
 <style lang="scss">
