@@ -1,6 +1,8 @@
 {
   "login": {
+    "close": "Close",
     "username": "Username",
     "password": "Password"
-  }
+  },
+  "test test": "TEST TEST"
 }

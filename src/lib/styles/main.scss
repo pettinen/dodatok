@@ -1,0 +1,19 @@
+@use "globals.scss" as g;
+
+:root {
+  overflow-x: hidden;
+  width: 100vw;
+}
+
+body {
+  background-color: g.$background-color;
+  color: g.$text-color;
+  font-family: "Fira Sans";
+  font-weight: 300;
+  overflow-x: hidden;
+  width: 100vw;
+
+  &.preload * {
+    transition: none !important;
+  }
+}

@@ -1,144 +1,255 @@
+<svelte:window on:load={onWindowLoad} />
+
 <nav>
   {#if loginOpen}
-    <div class="login" transition:reveal={{ direction: "left", duration: 200 }}>
-      <IconInput bind:this={usernameInput} icon=person style="height: 50%;" placeholder={$_("login.username")} />
-      <IconInput type=password icon=password style="height: 50%;" placeholder={$_("login.password")} />
+    <div
+      class=login-modal
+      in:reveal={{ direction: narrow ? "bottom" : "left", duration: 200 }}
+      out:reveal={{ direction: narrow ? "bottom" : "left", duration: 200 }}
+    >
+      {#if !narrow}
+        <button
+          class="close pure-button"
+          on:click={closeLogin}
+          title={_("login.close")}
+        >
+          <span class=material-icons>chevron_right</span>
+        </button>
+      {/if}
+      <div class=login-inputs>
+        <div class=login-input>
+          <IconTextInput
+            bind:this={usernameInput}
+            bind:value={username}
+            icon=person
+            placeholder={_("login.username")}
+          />
+        </div>
+        <div class=login-input>
+          <IconPasswordInput
+            bind:value={password}
+            icon=password
+            placeholder={_("login.password")}
+          />
+        </div>
+      </div>
+      {#if narrow}
+        <button
+          class="close narrow pure-button"
+          on:click={closeLogin}
+          title={_("login.close")}
+        >
+          <span class=material-icons>expand_less</span>
+        </button>
+      {/if}
     </div>
   {/if}
-  <button class="pure-button pure-button-primary" on:click={toggleLogin}>
+  <button
+    class="pure-button open-or-login-button"
+    class:login={loginOpen}
+    class:tall={narrow && loginOpen}
+    class:open={!loginOpen}
+    on:click={loginOrOpenLogin}
+  >
     {#key loginOpen}
-      <span class="login-icon" in:in_ out:out>
-        <span class=material-icons>{loginOpen ? "close" : "login"}</span>
+      <span class=open-or-login-icon in:reveal={{ direction: "left" }} out:reveal={{ direction: "right" }}>
+        <span class=material-icons>{loginOpen ? "login" : "person"}</span>
       </span>
     {/key}
+  </button>
 </nav>
+<!--
+{#each ["magenta", "yellow", "green", "blue", "cyan", "red"] as color}
+<div class={color} style="height: 6rem; width: 100vw;">{color}</div>
+{/each}
+-->
+<p>{_("test test")} {narrow}</p>
 
 <slot />
 
 <script lang="ts">
-  import "$lib/i18n";
-  import { tick } from "svelte";
-  import { _ } from "svelte-i18n";
+  import "$lib";
+  import { tick, onMount } from "svelte";
+  import { format } from "svelte-i18n";
 
-  import IconInput from "$lib/components/IconInput.svelte";
+  import { browser } from "$app/env";
 
+  import IconTextInput from "$lib/components/IconTextInput.svelte";
+  import IconPasswordInput from "$lib/components/IconPasswordInput.svelte";
+  import { reveal } from "$lib/transitions";
+
+  import "$lib/styles/main.scss";
   import "@fontsource/fira-sans/latin.css";
   import "purecss";
   import "material-icons/iconfont/material-icons.css";
 
-  //import Menu from "$lib/Menu.svelte";
+  $: _ = (messageID: string) => {
+    try {
+      return $format(messageID);
+    } catch {
+      return messageID;
+    }
+  };
+
+  let narrow = false;
+  if (browser) {
+    const mediaQuery = matchMedia(`(width < 49rem)`);
+    narrow = mediaQuery.matches;
+    mediaQuery.addEventListener("change", (event) => {
+      narrow = event.matches;
+    });
+  }
+
+  const onWindowLoad = () => {
+    document.body.classList.remove("preload");
+  };
 
   let loginOpen: boolean = false;
   let usernameInput: IconInput;
-  const toggleLogin = async (): void => {
-    loginOpen = !loginOpen;
-    if (loginOpen) {
+  let username = "";
+  let password = "";
+
+  const closeLogin = (): void => {
+    loginOpen = false;
+  };
+
+  const loginOrOpenLogin = async (): Promise<void> => {
+    if (!loginOpen) {
+      loginOpen = true;
       await tick();
       if (usernameInput)
         usernameInput.focus();
+    } else {
+      login();
     }
   };
 
-  interface RevealParams {
-    direction: "top" | "right" | "bottom" | "left";
-    delay?: number;
-    duration?: number;
-    reverse?: boolean;
-  }
-
-  const reveal = function(
-    node: HTMLElement,
-    { direction, delay = 0, duration = 300, reverse = false }: RevealParams
-  ) {
-    const width = node.getBoundingClientRect().width;
-    let directionIndex: number;
-    switch (direction) {
-      case "top":
-        directionIndex = 0;
-        break;
-      case "right":
-        directionIndex = 1;
-        break;
-      case "bottom":
-        directionIndex = 2;
-        break;
-      case "left":
-        directionIndex = 3;
-        break;
-      default:
-        throw new Error(`invalid direction: ${direction}`)
-    }
-    const css = (t: number, u: number) => {
-      const rectParams = ["auto", "auto", "auto"];
-      rectParams.splice(directionIndex, 0, `${(reverse ? t : u) * width}px`);
-      return `clip: rect(${rectParams.join(", ")})`;
-    }
-    return { css, delay, duration };
+  const login = () => {
+    alert("lol");
   };
 
-  const [in_, out] = function crossReveal() {
-    const transition = (in_: boolean) => {
-      return (node: HTMLElement, _params: {}) => (
-        reveal(node, { direction: in_ ? "left": "right", reverse: !in_ })
-      );
-    }
-    return [transition(true), transition(false)];
-  }();
 </script>
 
-<style lang="scss">
-  $navbar-height: 5rem;
-  $login-icon-size: calc(0.6 * $navbar-height);
-
-  :global {
-    :root {
-      font-size: 62.5%;
-    }
-    body {
-      font-family: "Fira Sans";
-      font-size: 1.6rem;
-      font-weight: 300;
-    }
-  }
+<style lang="scss" module>
+  @use "globals.scss" as g;
 
   nav {
-    align-items: center;
+    align-items: start;
     display: flex;
-    height: $navbar-height;
+    height: g.$navbar-height;
     justify-content: flex-end;
     position: absolute;
-    top: 0;
-    right: 0;
+    width: 100vw;
 
     button {
       align-items: center;
       border-radius: 0;
       display: flex;
-      height: $navbar-height;
+      height: g.$navbar-height;
       justify-content: center;
-      width: $navbar-height;
+      line-height: 0;
+      padding: 0;
+      width: g.$navbar-height;
       z-index: 10;
 
-      .login-icon {
-        overflow: hidden;
-        position: absolute;
-        transform: rotate(-45deg);
+      &.open-or-login-button {
+        transition: background-color 400ms, height 200ms;
 
-        span {
-          font-size: $login-icon-size;
-          transform: rotate(45deg);
+        &.tall {
+          height: calc(2 * g.$navbar-height);
+        }
+
+        .open-or-login-icon {
+          overflow: hidden;
+          padding: 0.1rem;
+          position: absolute;
+          transform: rotate(-45deg);
+
+          span {
+            font-size: g.$login-icon-size;
+            transform: rotate(45deg);
+          }
+        }
+      }
+
+      &.close {
+        background-color: g.$red;
+      }
+
+      &.open {
+        background-color: g.$cyan;
+      }
+
+      &.login {
+        background-color: g.$green;
+      }
+    }
+
+    .login-modal {
+      background-color: g.$black;
+      display: flex;
+      flex-direction: column;
+      gap: g.$navbar-gap;
+      height: calc(2.5 * g.$navbar-height);
+      justify-content: start;
+      left: 0;
+      padding-right: g.$navbar-gap;
+      position: absolute;
+      right: g.$navbar-height;
+      top: 0;
+      width: 100%;
+
+      button.close {
+        height: calc(0.5 * g.$navbar-height);
+
+        &.narrow {
+          width: 100%;
+        }
+      }
+
+      .login-inputs {
+        display: flex;
+        flex-direction: column;
+        gap: g.$navbar-gap;
+        height: calc(2 * g.$navbar-height);
+        justify-content: end;
+
+        .login-input {
+          padding: 0 g.$navbar-gap;
+          width: calc(100vw - g.$navbar-height - 2 * g.$navbar-gap);
         }
       }
     }
 
-    .login {
-      align-items: center;
-      display: flex;
-      background-color: #444444;
-      height: $navbar-height;
-      padding: 0 1rem;
-      position: absolute;
-      right: $navbar-height;
+    @media (min-width: 49rem) {
+      .login-modal {
+        flex-direction: row;
+        height: g.$navbar-height;
+        left: unset;
+        width: unset;
+
+        button.close {
+          height: g.$navbar-height;
+        }
+
+        .login-inputs {
+          align-items: center;
+          flex-direction: row;
+          height: g.$navbar-height;
+
+          .login-input {
+            padding: 0;
+            width: 20rem;
+          }
+        }
+      }
     }
   }
+
+  .red { background-color: g.$red; }
+  .green { background-color: g.$green; }
+  .yellow { background-color: g.$yellow; }
+  .blue { background-color: g.$blue; }
+  .magenta { background-color: g.$magenta; }
+  .cyan { background-color: g.$cyan; }
 </style>

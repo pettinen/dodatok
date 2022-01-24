@@ -9,9 +9,9 @@
     "build": "svelte-kit build",
     "check": "svelte-check",
     "check:watch": "svelte-check --watch",
-    "dev": "svelte-kit dev --port 55555",
+    "dev": "svelte-kit dev --host --port 55555",
     "lint": "eslint src",
-    "preview": "svelte-kit preview --port 55555"
+    "preview": "svelte-kit preview --host --port 55555"
   },
   "devDependencies": {
     "@fontsource/fira-sans": "^4.5.0",
@@ -19,12 +19,9 @@
     "@sveltejs/kit": "next",
     "@typescript-eslint/eslint-plugin": "^5.10.0",
     "@typescript-eslint/parser": "^5.10.0",
-    "bulma": "^0.9.3",
     "eslint": "^8.7.0",
     "eslint-plugin-svelte3": "^3.4.0",
     "material-icons": "^1.10.6",
-    "normalize.css": "^8.0.1",
-    "postcss": "^8.4.5",
     "purecss": "^2.0.6",
     "sass": "^1.49.0",
     "svelte": "^3.46.2",

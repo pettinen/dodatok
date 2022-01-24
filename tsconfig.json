@@ -15,6 +15,7 @@
     "noUnusedLocals": true,
     "noUnusedParameters": true,
     "paths": {
+      "$lib": ["src/lib"],
       "$lib/*": ["src/lib/*"]
     },
     "removeComments": true,

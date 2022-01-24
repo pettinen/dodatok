@@ -18,6 +18,7 @@ specifiers:
   svelte-check: ^2.3.0
   svelte-i18n: ^3.3.13
   svelte-preprocess: ^4.10.2
+  svelte-preprocess-cssmodules: ^2.1.2
   tslib: ^2.3.1
   typescript: ^4.5.5
 
@@ -39,6 +40,7 @@ devDependencies:
   svelte-check: 2.3.0_77d7750cf002ab9dbc05a2cb89869e71
   svelte-i18n: 3.3.13_svelte@3.46.2
   svelte-preprocess: 4.10.2_6fe01f8f1773f994db5be9837dcb915c
+  svelte-preprocess-cssmodules: 2.1.2_svelte@3.46.2+typescript@4.5.5
   tslib: 2.3.1
   typescript: 4.5.5
 
@@ -388,6 +390,10 @@ packages:
 
   /balanced-match/1.0.2:
     resolution: {integrity: sha512-3oSeUO0TMV67hN1AmbXsK4yaqU7tjiHlbxRDZOpH0KW9+CeX4bRAaX0Anxt0tx2MrpRpWwQaPwIlISEJhYU5Pw==}
+    dev: true
+
+  /big.js/6.1.1:
+    resolution: {integrity: sha512-1vObw81a8ylZO5ePrtMay0n018TcftpTA5HFKDaSuiUDBo8biRBtjIobw60OpwuvrGk+FsxKamqN4cnmj/eXdg==}
     dev: true
 
   /binary-extensions/2.2.0:
@@ -1424,6 +1430,19 @@ packages:
       sade: 1.8.1
       svelte: 3.46.2
       tiny-glob: 0.2.9
+    dev: true
+
+  /svelte-preprocess-cssmodules/2.1.2_svelte@3.46.2+typescript@4.5.5:
+    resolution: {integrity: sha512-z1LBKr3WT2lg7oG/+9TFq6Bu1JRTyOroZyCMibXdimSLTmhrooVALUYMQqj+kkxRzP6+Ny2Kyr3/wiPLT6F7Hg==}
+    peerDependencies:
+      svelte: ^3.20.0
+      typescript: ^4.0.0
+    dependencies:
+      acorn: 8.7.0
+      big.js: 6.1.1
+      magic-string: 0.25.7
+      svelte: 3.46.2
+      typescript: 4.5.5
     dev: true
 
   /svelte-preprocess/4.10.2_6fe01f8f1773f994db5be9837dcb915c:

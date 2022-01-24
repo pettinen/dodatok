@@ -1,7 +1,7 @@
 <!--<h1>oh shit this is a bretty long headline how are we gonna manage this oh noooo</h1>-->
 <h1>fugggggg</h1>
 
-<p>bog basic text. lorem ipsum and shit</p>
+<p>lorem ipsum and shit</p>
 
 <script lang="ts">
 </script>
