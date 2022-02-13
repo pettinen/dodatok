@@ -1,0 +1,49 @@
+{
+  "account": {
+    "your-account": "Käyttäjätilisi"
+  },
+  "auth": {
+    "errors": {
+      "requires-login": "Kirjaudu sisään nähdäksesi tämän sivun.",
+      "requires-no-login": "Et tarvitse tätä sivua, olet jo kirjautunut sisään!"
+    }
+  },
+  "errors": {
+    "not-found": "Sivua ei löytynyt.",
+    "unexpected": "Odottamaton virhe.",
+    "welp": "Hups"
+  },
+  "login": {
+    "close": "Suje",
+    "errors": {
+      "not-found": "Käyttäjätunnus tai salasana on väärin.",
+      "unexpected": "Kirjautuminen epäonnistui odottamattoman virheen takia."
+    },
+    "log-in": "Kirjaudu sisään",
+    "username": "Käyttäjätunnus",
+    "password": "Salasana"
+  },
+  "logout": {
+    "errors": {
+      "fail": "Uloskirjautuminen epäonnistui.",
+      "unexpected": "Uloskirjautuminen epäonnistui odottamattoman virheen takia."
+    }
+  },
+  "menu": {
+    "change-language": "Vaihda kieltä",
+    "home": "Etusivu",
+    "log-out": "Kirjaudu ulos",
+    "logged-in-as": "Kirjautuneena: {username}",
+    "manage-account": "Hallinnoi käyttäjätiliä",
+    "open-account-info": "Avaa käyttäjän tiedot",
+    "user-icon": "Käyttäjän kuvake"
+  },
+  "signup": {
+    "sign-up": "Rekisteröidy"
+  },
+  "validation": {
+    "above-max-length": "{field} voi olla korkeintaan {maxLength} merkkiä pitkä.",
+    "below-min-length": "{field} ei voi olla alle {minLength} merkkiä pitkä.",
+    "empty": "{field} ei voi olla tyhjä."
+  }
+}

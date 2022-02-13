@@ -1,8 +1,17 @@
 import { register, init, getLocaleFromNavigator } from "svelte-i18n";
 
-register("en-US", () => import("$lib/translations/en-US.json"));
+interface Translations {
+  [id: string]: Translations | string;
+}
 
-init({
+for (const locale of ["en-US", "fi-FI"]) {
+  register(
+    locale,
+    async (): Promise<Translations> => import(`./translations/${locale}.json`),
+  );
+}
+
+void init({
   fallbackLocale: "en-US",
   initialLocale: getLocaleFromNavigator(),
 });

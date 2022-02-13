@@ -6,17 +6,20 @@
     on:input
     on:keydown
   >
-  <span class=material-icons>{icon}</span>
+  <span class=material-icons class:error>{icon}</span>
 </div>
 
-<script lang="ts">
+<script lang=ts>
+  export let disabled = false;
+  export let error = false;
   export let icon: string;
   export let placeholder = "";
-  export let value;
+  export let value = "";
 
   let input: HTMLInputElement;
 
   $: attrs = {
+    disabled,
     placeholder,
   };
 
@@ -26,7 +29,7 @@
   };
 </script>
 
-<style lang="scss">
+<style lang=scss>
   @use "globals.scss" as g;
 
   $input-color: g.$white;
@@ -66,5 +69,9 @@
     left: 0.25em;
     bottom: 0.1em;
     position: absolute;
+
+    &.error {
+      color: g.$red !important;
+    }
   }
 </style>

@@ -1,15 +1,22 @@
-$black:      #141414;
-$red:        #C06C43;
-$green:      #AFB979;
-$yellow:     #C2A86C;
-$blue:       #444649;
-$magenta:    #AB99AC;
-$cyan:       #778284;
-$white:      #FEFFD3;
+$black: #141414;
+$dark-grey: #282828;
+$red: #C06C43;
+$green: #AFB979;
+$yellow: #C2A86C;
+$blue: #444649;
+$magenta: #AB99AC;
+$cyan: #778284;
+$white: #FEFFD3;
 
 $background-color: $black;
+$content-padding: 1rem;
 $text-color: $white;
+$text-color-dark: $black;
+
+$account-background-color: $dark-grey;
 
 $navbar-gap: 1rem;
 $navbar-height: 3rem;
-$login-icon-size: calc(0.6 * $navbar-height);
+
+$icon-button-size: $navbar-height;
+$icon-button-font-size: calc(0.6 * $icon-button-size);

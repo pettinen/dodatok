@@ -11,23 +11,30 @@
       on:keydown
     >
   {/if}
-  <span class="material-icons password-icon">password</span>
-  <a class="material-icons visibility-icon" on:click={toggleVisible}>
+  <span class="material-icons password-icon" class:error>{icon}</span>
+  <span
+    role="button"
+    class="material-icons visibility-icon"
+    on:click={toggleVisible}
+  >
     {visible ? "visibility_off" : "visibility"}
-  </a>
+  </span>
 </div>
 
-<script lang="ts">
+<script lang=ts>
   import { tick } from "svelte";
 
-  export let icon: string;
+  export let disabled = false;
+  export let error = false;
+  export let icon = "password";
   export let placeholder = "";
-  export let value;
+  export let value = "";
 
   let input: HTMLInputElement;
   let visible = false;
 
   $: attrs = {
+    disabled,
     placeholder,
   };
 
@@ -36,26 +43,21 @@
       input.focus();
   };
 
-  const toggleVisible = async (): void => {
-    let selectionStart;
-    let selectionEnd;
-    let setSelection = false;
-    if (input) {
-      selectionStart = input.selectionStart;
-      selectionEnd = input.selectionEnd;
-      setSelection = true;
-    }
+  const toggleVisible = async (): Promise<void> => {
+    let selectionStart: number | null = null;
+    let selectionEnd: number | null = null;
+    if (input)
+      ({ selectionStart, selectionEnd } = input);
     visible = !visible;
     if (input) {
       await tick();
-      if (setSelection)
-        input.setSelectionRange(selectionStart, selectionEnd);
+      input.setSelectionRange(selectionStart, selectionEnd);
       input.focus();
     }
   };
 </script>
 
-<style lang="scss">
+<style lang=scss>
   @use "globals.scss" as g;
 
   $input-color: g.$white;
@@ -98,13 +100,18 @@
       bottom: 0.1em;
       font-size: 1.5em;
       left: 0.25em;
+
+      &.error {
+        color: g.$red !important;
+      }
     }
 
     &.visibility-icon {
-      bottom: 0.3em;
+      bottom: 0.15em;
       cursor: pointer;
       font-size: 1em;
-      right: 0.25em;
+      padding: 0.25em;
+      right: 0;
     }
   }
 </style>
