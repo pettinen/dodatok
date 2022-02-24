@@ -1,0 +1,165 @@
+{
+  "account": {
+    "account-deleted": "Account deleted.",
+    "cancel-totp-setup": "Cancel setup",
+    "change-password": "Change password",
+    "change-username": "Change username",
+    "change-username-and-password": "Change username and password",
+    "current-password-required": "Your current password is required to apply these changes.",
+    "current-password-required-to-delete-account": "Confirm account deletion with your current password.",
+    "complete-totp-setup": "Complete setup",
+    "current-password": "Current password",
+    "delete-account": "Delete account",
+    "disable-totp": "Disable two-factor authentication",
+    "drop-file": "Drop file",
+    "enable-totp": "Enable two-factor authentication",
+    "errors": {
+      "cannot-update-other-users-password": "Updating other users\u2019 passwords is not allowed.",
+      "invalid-current-password": "Current password is incorrect.",
+      "invalid-totp-verification": "Invalid two-factor verification code.",
+      "no-totp-key-active": "Two-factor authentication could not be enabled; the setup might have expired.",
+      "totp-already-enabled": "Two-factor authentication is already enabled.",
+      "username-not-available": "The requested username is taken."
+    },
+    "icon": "Icon",
+    "icon-removed": "Icon removed.",
+    "icon-updated": "Icon updated.",
+    "locale": "Language",
+    "locale-updated": "Language updated.",
+    "logout-all-sessions": "Log out of all sessions",
+    "no-changes-made": "No changes made",
+    "password-changed": "Your password has been changed.",
+    "restore-icon": "Restore old icon",
+    "remove-icon": "Remove icon",
+    "save-changes": "Save changes",
+    "totp-disabled": "Two-factor authentication has been disabled.",
+    "totp-enabled": "Two-factor authentication has been enabled.",
+    "totp-setup-expired": "Two-factor authentication setup expired.",
+    "totp-setup-instructions": "Scan the QR code with an authenticator app (or copy the secret value) and verify setup by entering the {codeLength}-digit code from the app below.",
+    "totp-qr-code": "QR code for enabling two-factor authentication",
+    "totp-secret": "Secret",
+    "totp-secret-copied": "Secret copied to clipboard.",
+    "user-icon": "User icon",
+    "username-changed": "Your username has been updated.",
+    "username-unavailable": "Username not available",
+    "warnings": {
+      "no-change-in-password": "New password is the same as the old one.",
+      "totp-secret-copy-failed": "Failed to copy the secret."
+    },
+    "your-account": "Your account"
+  },
+  "auth": {
+    "errors": {
+      "account-disabled": "This account is disabled.",
+      "invalid-credentials": "The username or password is incorrect.",
+      "invalid-totp": "The two-factor authentication code is invalid.",
+      "not-logged-in": "You are not logged in.",
+      "remember-token-secret-mismatch": "Possible session hijacking detected. You have been logged out of all sessions as a precaution.",
+      "requires-login": "Log in to view this page.",
+      "requires-no-login": "You\u2019re already logged in, you don\u2019t need this page!",
+      "session-expired": "Session expired. Please log in again.",
+      "totp-required": "Please enter a two-factor authentication code.",
+      "unauthenticated-csrf-token-fetch-failed": "There are currently some problems with logging in.",
+      "unexpected": "Unexpected authentication error."
+    },
+    "warnings": {
+      "unused-totp": "A two-factor authentication code was supplied, but your account does not have 2FA enabled."
+    }
+  },
+  "csrf": {
+    "errors": {
+      "invalid-csrf-token": "Please try again.",
+      "missing-csrf-cookie": "Please try again.",
+      "missing-csrf-header": "Please try again."
+    }
+  },
+  "file-upload": {
+    "clear": "Clear",
+    "select-or-drop-file": "Select or drop a file here"
+  },
+  "general": {
+    "errors": {
+      "could-not-connect-to-server": "Could not connect to server.",
+      "not-found": "Page not found.",
+      "unexpected": "Unexpected error.",
+      "oops": "Oops",
+      "too-many-requests": "You are being rate limited.",
+      "user-data-fetch-failed": "Could not log in to your account."
+    },
+    "update-available-prefix": "An update is available.",
+    "update-available-refresh": "Refresh now",
+    "update-available-suffix": "to get the latest version."
+  },
+  "login": {
+    "close": "Close",
+    "errors": {
+      "unexpected": "Could not log in due to an unexpected error."
+    },
+    "log-in": "Log in",
+    "password": "Password",
+    "remember-me": "Remember me",
+    "totp": "Two-factor authentication code",
+    "totp-placeholder": "2FA (if enabled)",
+    "username": "Username"
+  },
+  "logout": {
+    "errors": {
+      "unexpected": "Could not log out due to an unexpected error."
+    }
+  },
+  "menu": {
+    "change-language": "Change language",
+    "home": "Home",
+    "log-out": "Log out",
+    "logged-in-as": "Logged in as {username}",
+    "manage-account": "Manage account",
+    "open-account-info": "Open account info"
+  },
+  "signup": {
+    "sign-up": "Sign up"
+  },
+  "validation": {
+    "errors": {
+      "invalid-data": "Unexpected error.",
+      "locale": {
+        "invalid": "Unknown locale."
+      },
+      "login-username": {
+        "empty": "Please enter a username.",
+        "too-long": "Username can be at most {maxLength, plural, one {# character} other {# characters}} long."
+      },
+      "new-username": {
+        "empty": "New username cannot be empty.",
+        "too-long": "New username can be at most {maxLength, plural, one {# character} other {# characters}} long.",
+        "too-short": "New username must be at least {minLength, plural, one {# character} other {# characters}} long."
+      },
+      "login-password": {
+        "empty": "Please enter a password.",
+        "too-long": "Password can be at most {maxLength, plural, one {# character} other {# characters}} long."
+      },
+      "current-password": {
+        "empty": "Your current password is required to apply these changes.",
+        "too-long": "Current password can be at most {maxLength, plural, one {# character} other {# characters}} long."
+      },
+      "new-password": {
+        "empty": "Please enter a new password.",
+        "too-long": "New password can be at most {maxLength, plural, one {# character} other {# characters}} long.",
+        "too-short": "New password must be at least {minLength, plural, one {# character} other {# characters}} long."
+      },
+      "totp": {
+        "empty": "Please enter a two-factor authentication code.",
+        "invalid": "Please enter a {codeLength}-digit two-factor authentication code."
+      },
+      "user-icon": {
+        "invalid-file-type": "Selected user icon has an invalid file type.",
+        "invalid-image": "Could not process image.",
+        "multiple-files": "Please select only one file to update your user icon.",
+        "no-files": "No files were selected as the user icon.",
+        "too-large": "Please select a user icon no larger than {maxSizeMB}\u2009MB.",
+        "too-small": "User icon should be at least {minDimension}\u00D7{minDimension} pixels large.",
+        "too-tall": "User icon will be cropped to a square; the image you selected is too tall.",
+        "too-wide": "User icon will be cropped to a square; the image you selected is too wide."
+      }
+    }
+  }
+}

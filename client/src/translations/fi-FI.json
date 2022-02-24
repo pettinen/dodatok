@@ -1,0 +1,130 @@
+{
+  "account": {
+    "change-password": "Vaihda salasana",
+    "change-username": "Vaihda käyttäjätunnus",
+    "current-password": "Nykyinen salasana",
+    "disable-totp": "Poista kaksivaiheinen vahvistus käytöstä",
+    "errors": {
+      "invalid-current-password": "Nykyinen salasana on väärin.",
+      "username-not-available": "Käyttäjätunnus on jo käytössä."
+    },
+    "icon": "Kuvake",
+    "icon-removed": "Kuvake poistettu.",
+    "locale": "Kieli",
+    "logout-all-sessions": "Kirjaudu ulos kaikkialta",
+    "no-changes-made": "Ei muutoksia",
+    "password-changed": "Salasana vaihdettu.",
+    "remove-icon": "Poista kuvake",
+    "save-changes": "Tallenna muutokset",
+    "totp-disabled": "Kaksivaiheinen vahvistus on poistettu käytöstä.",
+    "user-icon": "User icon",
+    "username-changed": "Käyttäjätunnus vaihdettu.",
+    "warnings": {
+      "no-changes-made": "Et tehnyt muutoksia."
+    },
+    "your-account": "Käyttäjätilisi"
+  },
+  "auth": {
+    "errors": {
+      "account-disabled": "Käyttäjätili on lukittu.",
+      "invalid-credentials": "Käyttäjätunnus tai salasana on väärin.",
+      "invalid-totp": "Kaksivaiheisen vahvistuksen koodi on väärin.",
+      "not-logged-in": "Et ole kirjautunut sisään.",
+      "requires-login": "Kirjaudu sisään nähdäksesi tämän sivun.",
+      "requires-no-login": "Et tarvitse tätä sivua, olet jo kirjautunut sisään!",
+      "totp-required": "Syötä kaksivaiheisen vahvistuksen koodi.",
+      "unexpected": "Odottamaton virhe tunnistautumisessa."
+    },
+    "warnings": {
+      "unused-totp": "Syötit kaksivaiheisen vahvistuksen koodin, vaikka et käytä kyseistä suojausta."
+    }
+  },
+  "file-upload": {
+    "clear": "Tyhjennä",
+    "select-or-drop-file": "Valitse tai pudota tiedosto"
+  },
+  "general": {
+    "errors": {
+      "could-not-connect-to-server": "Palvelimeen ei saatu yhteyttä.",
+      "not-found": "Sivua ei löytynyt.",
+      "unexpected": "Odottamaton virhe.",
+      "oops": "Hups",
+      "user-data-fetch-failed": "Käyttäjätilillesi ei voitu kirjautua."
+    }
+  },
+  "login": {
+    "close": "Sulje",
+    "errors": {
+      "unexpected": "Kirjautuminen epäonnistui odottamattoman virheen takia."
+    },
+    "log-in": "Kirjaudu sisään",
+    "password": "Salasana",
+    "remember-me": "Muista minut",
+    "totp": "Kaksivaiheinen vahvistuskoodi",
+    "totp-placeholder": "2FA (jos käytössä)",
+    "username": "Käyttäjätunnus"
+  },
+  "logout": {
+    "errors": {
+      "unexpected": "Uloskirjautuminen epäonnistui odottamattoman virheen takia."
+    }
+  },
+  "menu": {
+    "change-language": "Vaihda kieltä",
+    "home": "Etusivu",
+    "log-out": "Kirjaudu ulos",
+    "logged-in-as": "Kirjautuneena: {username}",
+    "manage-account": "Käyttäjäasetukset",
+    "open-account-info": "Avaa käyttäjän tiedot"
+  },
+  "signup": {
+    "sign-up": "Rekisteröidy"
+  },
+  "validation": {
+    "errors": {
+      "invalid-data": "Odottamaton virhe.",
+      "locale": {
+        "invalid": "Tuntematon kieli."
+      },
+      "login-username": {
+        "empty": "Syötä käyttäjätunnus.",
+        "too-long": "Käyttäjätunnus voi olla korkeintaan {maxLength} merkkiä pitkä.",
+        "too-short": "Käyttäjätunnuksen täytyy olla vähintään {minLength} merkkiä pitkä."
+      },
+      "new-username": {
+        "empty": "Uusi käyttäjätunnus ei voi olla tyhjä.",
+        "too-long": "Uusi käyttäjätunnus voi olla korkeintaan {maxLength} merkkiä pitkä.",
+        "too-short": "Uuden käyttäjätunnuksen täytyy olla vähintään {minLength} merkkiä pitkä."
+      },
+      "login-password": {
+        "empty": "Syötä salasana.",
+        "too-long": "Salasana voi olla korkeintaan {maxLength} merkkiä pitkä.",
+        "too-short": "Salasanan täytyy olla vähintään {minLength} merkkiä pitkä."
+      },
+      "current-password": {
+        "empty": "Syötä nykyinen salasana tehdäksesi nämä muutokset.",
+        "too-long": "Nykyinen salasana voi olla korkeintaan {maxLength} merkkiä pitkä.",
+        "too-short": "Nykyisen salasanan täytyy olla vähintään {minLength} merkkiä pitkä."
+      },
+      "new-password": {
+        "empty": "Syötä uusi salasana.",
+        "too-long": "Uusi salasana voi olla korkeintaan {maxLength} merkkiä pitkä.",
+        "too-short": "Uuden salasanan täytyy olla vähintään {minLength} merkkiä pitkä."
+      },
+      "totp": {
+        "empty": "Syötä kaksivaiheisen vahvistuksen koodi.",
+        "invalid": "Syötä {codeLength}-numeroinen kaksivaiheisen vahvistuksen koodi."
+      },
+      "user-icon": {
+        "invalid-file-type": "Kuvakkeen tiedostotyyppi ei kelpaa.",
+        "invalid-image": "Kuvan lataaminen epäonnistui.",
+        "multiple-files": "Valitse vain yksi tiedosto kuvakkeeksi.",
+        "no-files": "Kuvaketiedoston valinta puuttuu.",
+        "too-large": "Valitse korkeintaan {maxSizeMB}\u2009Mt kokoinen kuvake.",
+        "too-small": "Kuvakkeen täytyy olla vähintään {minDimension}\u00D7{minDimension} pikselin kokoinen.",
+        "too-tall": "Kuvake rajataan neliön muotoiseksi; valitsemasi kuvake on liian korkea.",
+        "too-wide": "Kuvake rajataan neliön muotoiseksi; valitsemasi kuvake on liian leveä."
+      }
+    }
+  }
+}

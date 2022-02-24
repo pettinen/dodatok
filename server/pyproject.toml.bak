@@ -1,0 +1,45 @@
+[project]
+name = ""
+version = ""
+description = ""
+authors = [
+    {name = "Jeremias Pettinen", email = "hi@jeremi.as"},
+]
+dependencies = [
+    "quart>=0.16.3",
+    "asyncpg>=0.25.0",
+    "cryptography>=36.0.1",
+    "argon2-cffi>=21.3.0",
+    "jsonschema>=4.4.0",
+    "pyotp>=2.6.0",
+    "qrcode>=7.3.1",
+    "minio>=7.1.3",
+    "pillow>=9.0.1",
+    "aioredis[hiredis]>=2.0.1",
+    "miscreant>=0.3.0",
+    "python-socketio>=5.5.2",
+]
+requires-python = ">=3.10"
+license = "ISC"
+
+[project.urls]
+homepage = ""
+
+[project.optional-dependencies]
+[tool]
+[tool.pdm]
+[tool.pdm.dev-dependencies]
+dev = [
+    "black>=22.1.0",
+    "mypy>=0.931",
+]
+
+[tool.pdm.scripts]
+dev.cmd = "quart run --host 0.0.0.0"
+dev.env = {QUART_APP = "api:create_app()"}
+
+mypy = "mypy api"
+
+[build-system]
+requires = ["pdm-pep517"]
+build-backend = "pdm.pep517.api"
