@@ -1,0 +1,48 @@
+[client]
+origin = "http://kotori.lab:55555"
+
+[cookie]
+path = "/"
+secure = false
+
+[csrf]
+token_bits = 256
+cookie = "csrfToken"
+header = "X-CSRF-Token"
+response_field = "csrfToken"
+
+[db]
+dbname = "simple_backend"
+application_name = "simple-backend"
+
+[redis]
+url = "unix:///run/redis/redis.sock?db=0"
+key_separator = "|"
+
+[remember_token]
+cookie = "rememberToken"
+id_bits = 256
+secret_bits = 256
+separator = ":"
+
+[security]
+aes_key = "87428fc522803d31065e7bce3cf03fe475096631e5e07bbd7a0fde60c4cf25c7"
+password_salt_bits = 128
+
+[session]
+cookie = "session"
+id_bits = 256
+lifetime = 31_104_000
+sudo_lifetime = 86_400
+
+[totp]
+algorithm = "SHA-1"
+digits = 6
+time_step = 30
+time_window = 1
+
+[websocket]
+channel_capacity = 32
+connection_id_bits = 256
+token_bits = 256
+token_lifetime = 60
