@@ -11,7 +11,7 @@ export default {
       enabled: false,
     },
     version: {
-      pollInterval: 60_000,
+      pollInterval: 600_000,
     },
     vite: {
       resolve: {

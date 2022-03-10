@@ -1,6 +1,8 @@
-<svelte:window on:close-account-current-password={() => { currentSubmitFunction = null; }} />
+<svelte:window on:close-account-current-password={clearCurrentSubmitFunction} />
 
-{#if $session.user}
+{#if !$user}
+  <ErrorPage>{$_("auth.requires-login")}</ErrorPage>
+{:else}
   {#if currentSubmitFunction}
     <div class=current-password>
       <div class=current-password-modal>
@@ -35,89 +37,92 @@
           </button>
         {/if}
       </div>
-      <div
-        class=current-password-background
-        on:click={() => { currentSubmitFunction = null; }}
-      ></div>
+      <div class=current-password-background on:click={clearCurrentSubmitFunction}></div>
     </div>
   {/if}
 
   <main>
-    <h1
-      bind:this={heading}
-      class=main-heading
-      class:avoid-navbar-intersection={moveHeadingDown}
-    >
-      {$_("account.your-account")}
-    </h1>
+    <Heading>{$_("account.your-account")}</Heading>
 
     <div class=basic-info>
-      {#if $userIcon}
-        <div class=user-icon>
-          <span class=username>{$session.user.username}</span>
-          <label
-            bind:this={iconLabel}
-            class=user-icon-container
-            on:dragenter={onIconDragenter}
-            on:dragleave={() => { iconDragover = false; }}
-            on:dragover={(event) => { event.preventDefault(); }}
-            on:drop|preventDefault={onIconDrop}
+      <div class=user-icon>
+        <span class=username>{$user.username}</span>
+        <label
+          class=user-icon-container
+          on:dragenter={onIconDragEnter}
+          on:dragleave={onIconDragLeave}
+          on:dragover|preventDefault={noop}
+          on:drop|preventDefault={onIconDrop}
+        >
+          <input
+            class=hidden
+            bind:files={iconFiles}
+            accept={config.acceptedImageTypes.join(",")}
+            disabled={inputsDisabled}
+            type=file
           >
-            <input
-              class=hidden
-              bind:files={iconFiles}
-              accept={config.acceptedImageTypes.join(",")}
-              disabled={inputsDisabled}
-              type=file
+          {#if userIconState === "loaded"}
+            <img
+              class=user-icon-image
+              src={$cacheURL($user.icon)}
+              alt={$_("account.user-icon")}
             >
-            <img class=user-icon-image src={$userIcon} alt={$_("account.user-icon")}>
-            {#if submittingUserIcon}
-              <div class="user-icon-overlay spinning">
-                <span class=material-icons>autorenew</span>
-              </div>
-            {:else if iconDragover}
-              <div class=user-icon-overlay>{$_("account.drop-file")}</div>
-            {:else}
-              <div class="user-icon-overlay hover">
-                <span class=material-icons>file_upload</span>
-              </div>
-            {/if}
-          </label>
-          {#if $session.user.icon}
-            <button class="remove-icon link" on:click={removeIcon}>
-              {$_("account.remove-icon")}
-            </button>
+          {:else if userIconState === "loading" || userIconState === "not-loaded"}
+            <div class="user-icon-image spinning">
+              <span class="material-icons spinner">autorenew</span>
+            </div>
+          {:else}
+            <div class=user-icon-image>{$_("account.icon-load-failed")}</div>
           {/if}
-        </div>
-      {/if}
+          {#if submittingUserIcon}
+            <div class="user-icon-overlay spinning">
+              <span class=material-icons>autorenew</span>
+            </div>
+          {:else if iconDragover}
+            <div class=user-icon-overlay>{$_("account.drop-file")}</div>
+          {:else}
+            <div class="user-icon-overlay hover">
+              <span class=material-icons>file_upload</span>
+            </div>
+          {/if}
+        </label>
+        {#if $user.icon}
+          <button class="remove-icon link" on:click={removeIcon}>
+            {$_("account.remove-icon")}
+          </button>
+        {/if}
+      </div>
 
       <div class=basic-info-text-fields>
-        <IconTextInput
-          bind:this={usernameInput}
-          bind:value={username}
-          disabled={inputsDisabled}
-          error={$gotErrors(...errorSources.username) || usernameUnavailable}
-          errorMessage={usernameUnavailable ? "account.username-unavailable" : ""}
-          icon=person
-          placeholder={$_("account.change-username")}
-          on:input={onUsernameInput}
-        />
+        <div class=text-field>
+          <IconTextInput
+            bind:this={usernameInput}
+            bind:value={username}
+            disabled={inputsDisabled}
+            error={$gotErrors(...errorSources.username) || usernameUnavailable}
+            errorMessage={usernameUnavailable ? "account.username-unavailable" : ""}
+            icon=person
+            placeholder={$_("account.change-username")}
+            on:input={onUsernameInput}
+          />
+        </div>
 
-        <IconPasswordInput
-          bind:this={newPasswordInput}
-          bind:value={newPassword}
-          disabled={inputsDisabled}
-          error={$gotErrors(...errorSources.newPassword)}
-          placeholder={$_("account.change-password")}
-          on:input={onNewPasswordInput}
-        />
+        <div class=text-field>
+          <IconPasswordInput
+            bind:this={newPasswordInput}
+            bind:value={newPassword}
+            disabled={inputsDisabled}
+            error={$gotErrors(...errorSources.newPassword)}
+            placeholder={$_("account.change-password")}
+            on:input={onNewPasswordInput}
+          />
+        </div>
 
         <button
           class="button icon-text save-username-password"
-          class:hidden={narrow && !textFieldsChanged}
-          class:invisible={!narrow && !textFieldsChanged}
+          class:hidden={!textFieldsChanged}
           disabled={inputsDisabled || usernameUnavailable}
-          on:click={() => updateUsernamePassword().catch(catchError)}
+          on:click={onClick(updateUsernamePassword)}
         >
           <span class=material-icons>save</span>
           {$_(saveUsernamePasswordText)}
@@ -136,7 +141,7 @@
             class="button text locale-button"
             class:selected={selectedLocale === id}
             disabled={inputsDisabled}
-            on:click={() => { updateLocale(id); }}
+            on:click={onClick(updateLocale, id)}
           >
             {name}
           </button>
@@ -145,12 +150,12 @@
     </div>
 
     <div class=mfa class:mfa-open={totpKey}>
-      {#if $session.user.totpEnabled}
+      {#if $user.totpEnabled}
       <div>
         <button
           class="button text disable-totp"
           disabled={inputsDisabled}
-          on:click={() => { disableTOTP().catch(catchError); }}
+          on:click={onClick(disableTOTP)}
         >
           {$_("account.disable-totp")}
         </button>
@@ -185,7 +190,7 @@
           <button
             class="button text submit-totp-setup"
             disabled={inputsDisabled}
-            on:click={() => { enableTOTP().catch(catchError); }}
+            on:click={onClick(enableTOTP)}
           >
             {$_("account.complete-totp-setup")}
           </button>
@@ -219,50 +224,44 @@
     <button
       class="button text delete-account"
       disabled={inputsDisabled}
-      on:click={() => { deleteAccount(); }}
+      on:click={onClick(deleteAccount)}
     >
       {$_("account.delete-account")}
     </button>
   </main>
 {/if}
 
-<script context=module lang=ts>
-  export { requireAuth as load } from "$lib/auth";
-</script>
-
 <script lang=ts>
   import { onMount, tick } from "svelte";
-  import { fade } from "svelte/transition";
-  import { _, locale } from "svelte-i18n";
+  import { _ } from "svelte-i18n";
 
-  import { browser } from "$app/env";
   import { goto } from "$app/navigation";
-  import { assets } from "$app/paths";
-  import { session } from "$app/stores";
 
   import { cache, cacheURL } from "$lib/cache";
   import { config } from "$lib/config";
   import { errors, gotErrors, infoMessages, warnings } from "$lib/errors";
+  import { accountSocket } from "$lib/sockets";
   import { sudo, time } from "$lib/time";
+  import {
+    validateCSRFTokenResponse,
+    validateTOTPResponse,
+    validateUserIconResponse,
+    validatePutUserLocaleResponse,
+    validatePutUsernamePasswordResponse,
+    validateTOTPKeyResponse,
+    validateUsernameAvailableResponse,
+  } from "$lib/types";
   import type { JSONObject } from "$lib/types";
-  import { apiFetch, catchError, modals, userIcon, userIconURL } from "$lib/utils";
+  import { apiFetch, log, modals, noop, unexpected, updateUser, user } from "$lib/utils";
   import { validators } from "$lib/validation";
 
-  import Checkbox from "$lib/components/Checkbox.svelte";
-  import FileInput from "$lib/components/FileInput.svelte";
+  import ErrorPage from "$lib/components/ErrorPage.svelte";
+  import Heading from "$lib/components/Heading.svelte";
   import IconTextInput from "$lib/components/IconTextInput.svelte";
   import IconPasswordInput from "$lib/components/IconPasswordInput.svelte";
 
   import "@fontsource/fira-mono/latin.css";
 
-
-  interface PutDataBody {
-    currentPassword?: string;
-    locale?: string;
-    newPassword?: string;
-    totpVerifyEnable?: string;
-    username?: string;
-  }
 
   interface TOTPKey {
     expires: Date;
@@ -270,29 +269,20 @@
     qrCode: string;
   }
 
-  let heading: HTMLHeadingElement;
-  let moveHeadingDown = false;
   let narrow = false;
 
   onMount(() => {
     const narrowBreakpoint = "33rem";
     const narrowMediaQuery = matchMedia(`(max-width: ${narrowBreakpoint})`);
     narrow = narrowMediaQuery.matches;
-    narrowMediaQuery.addEventListener("change", (event): void => {
+    const update = (event: MediaQueryListEvent): void => {
       narrow = event.matches;
-    });
+    };
+    narrowMediaQuery.addEventListener("change", update);
 
-    const button = document.querySelector("#navbar-home-button")
-      ?? document.querySelector("#navbar-menu-button");
-    if (!heading || !button)
-      return;
-    const avoidNavbarBreakpoint =
-      heading.offsetLeft + heading.offsetWidth + 2 * button.offsetWidth;
-    const avoidNavbarMediaQuery = matchMedia(`(max-width: ${avoidNavbarBreakpoint}px)`);
-    moveHeadingDown = avoidNavbarMediaQuery.matches;
-    avoidNavbarMediaQuery.addEventListener("change", (event): void => {
-      moveHeadingDown = event.matches;
-    });
+    return (): void => {
+      narrowMediaQuery.removeEventListener("change", update);
+    };
   });
 
   const errorSources = {
@@ -313,7 +303,7 @@
 
   let submitting = false;
   let submittingUserIcon = false;
-  let currentSubmitFunction: (password?: string) => Promise<boolean> | null = null;
+  let currentSubmitFunction: ((password?: string) => Promise<boolean>) | null = null;
 
   let username = "";
   let usernameInput: IconTextInput;
@@ -322,7 +312,7 @@
   let currentPassword = "";
   let currentPasswordInput: IconPasswordInput;
   let saveUsernamePasswordText = "account.save-changes";
-  let selectedLocale = $session.user?.locale ?? config.defaultLocale;
+  let selectedLocale = $user?.locale ?? config.defaultLocale;
   let textFieldsChanged = false;
   let usernameTimeout: ReturnType<typeof setTimeout> | null = null;
   let usernameUnavailable = false;
@@ -332,107 +322,36 @@
   let totpKey: TOTPKey | null = null;
   let totpVerification = "";
 
-  let iconFiles: FileList;
+  let iconFiles: FileList | null = null;
   let iconFile: File | null = null;
-  let iconLabel: HTMLLabelElement;
   let iconDragover = false;
 
-  const onIconDragenter = (event: DragEvent): void => {
-    if (
-      !inputsDisabled
-      && event.dataTransfer
-      && event.dataTransfer.items.length === 1
-      && event.dataTransfer.items[0].kind === "file"
-      && config.acceptedImageTypes.includes(event.dataTransfer.items[0].type)
-    )
-      iconDragover = true;
-  };
-
-  const onIconDrop = (event: DragEvent): void => {
-    iconDragover = false;
-    if (
-      !inputsDisabled
-      && event.dataTransfer
-      && event.dataTransfer.items.length === 1
-      && event.dataTransfer.items[0].kind === "file"
-      && config.acceptedImageTypes.includes(event.dataTransfer.items[0].type)
-    )
-      iconFile = event.dataTransfer.items[0].getAsFile();
-  };
-
-  const onIconFilesChange = async (): void => {
-    if (!iconFiles || iconFiles.length === 0) {
-      iconFile = null;
-    } else if (iconFiles.length > 1) {
-      errors.add("validation.errors.user-icon.multiple-files");
-    } else {
-      await tick();
-      iconFile = iconFiles[0];
-    }
-  };
-
-  const onIconFileChange = async (): Promise<void> => {
-    if (!iconFile || submitting || !$session.user)
-      return;
-
-    errors.clear(...errorSources.icon);
-    const iconErrors = await validators.userIcon(iconFile);
-    if (iconErrors.length > 0) {
-      iconFile = null;
-      iconFiles = null;
-      errors.add(...iconErrors);
-      return;
-    }
-
-    submitting = true;
-    submittingUserIcon = true;
-    const form = new FormData();
-    form.append("icon", iconFile, "");
-    let data: JSONObject;
-    try {
-      data = await apiFetch(`/users/${$session.user.id}/icon`, "PUT", form);
-    } catch (error) {
-      catchError(error);
-      submitting = false;
-      submittingUserIcon = false;
-      return;
-    }
-    if (data.errors) {
-      submitting = false;
-      submittingUserIcon = false;
-      return;
-    }
-    $session.user.icon = userIconURL(data.icon);
-    document.querySelector("#navbar-home-button")?.focus();
-    infoMessages.showTimed("account.icon-updated");
-    submitting = false;
-    submittingUserIcon = false;
+  const clearCurrentSubmitFunction = (): void => {
+    currentSubmitFunction = null;
   };
 
   const removeIcon = async (): Promise<void> => {
-    if (!$session.user || submitting)
+    if (!$user || submitting)
       return;
 
     submitting = true;
-    let data: JSONObject;
-    try {
-      data = await apiFetch(`/users/${$session.user.id}/icon`, "PUT", { remove: true });
-    } catch(error) {
-      catchError(error);
+    const { data } = await apiFetch(
+      `/users/${$user.id}/icon`, validateUserIconResponse, "PUT", { remove: true }
+    );
+
+    if (!data || data.icon) {
       submitting = false;
       return;
     }
-    if (data.errors) {
-      submitting = false;
-      return;
-    }
-    $session.user.icon = null;
-    infoMessages.showTimed("account.icon-removed");
+
+    if (!$accountSocket?.connected)
+      updateUser(data);
+
     submitting = false;
   };
 
   const updateUsernamePassword = async (password?: string): Promise<boolean> => {
-    if (submitting || !$session.user)
+    if (submitting || !$user)
       return true;
 
     username = username.trim();
@@ -451,8 +370,8 @@
       return true;
     }
 
-    const body = {};
-    if (username && username !== $session.user.username)
+    const body: JSONObject = {};
+    if (username && username !== $user.username)
       body.username = username;
     if (newPassword)
       body.newPassword = newPassword;
@@ -467,49 +386,42 @@
     }
 
     submitting = true;
-    let data: JSONObject;
-    try {
-      data = await apiFetch(`/users/${$session.user.id}`, "PUT", body);
-    } catch (error) {
-      catchError(error);
+    const { data } = await apiFetch(
+      `/users/${$user.id}`, validatePutUsernamePasswordResponse, "PUT", body
+    );
+
+    if (data) {
+      if (data.errors)
+        errors.addFromAPI(data.errors);
+
+      if (data.warnings)
+        warnings.addFromAPI(data.warnings);
+
+      if (!$accountSocket?.connected)
+        updateUser(data);
+
+      if (data.username)
+        username = "";
+
+      if (data.passwordUpdated)
+        newPassword = "";
+
       submitting = false;
       return true;
     }
 
-    if (data.sudoUntil)
-      $session.user.sudoUntil = data.sudoUntil;
-
-    if (data.errors) {
-      submitting = false;
-      if (!currentSubmitFunction && $gotErrors("validation.errors.current-password.empty")) {
-        errors.clear("validation.errors.current-password.empty");
-        warnings.clear();
-        currentSubmitFunction = updateUsernamePassword;
-        return false;
-      }
-      if ($gotErrors(...errorSources.username))
-        usernameInput?.focus();
-      else if ($gotErrors(...errorSources.newPassword))
-        newPasswordInput?.focus();
-      return !$gotErrors(...errorSources.currentPassword);
-    }
-
-    if (data.username) {
-      $session.user.username = data.username;
-      username = "";
-      infoMessages.showTimed("account.username-changed");
-    }
-
-    if (data.passwordUpdated) {
-      newPassword = "";
-      infoMessages.showTimed("account.password-changed");
-    }
-
-    if (data.passwordChangeReason !== undefined)
-      $session.user.passwordChangeReason = data.passwordChangeReason;
-
     submitting = false;
-    return true;
+    if (!currentSubmitFunction && $gotErrors("validation.errors.current-password.empty")) {
+      errors.clear("validation.errors.current-password.empty");
+      warnings.clear();
+      currentSubmitFunction = updateUsernamePassword;
+      return false;
+    }
+    if ($gotErrors(...errorSources.username))
+      usernameInput?.focus();
+    else if ($gotErrors(...errorSources.newPassword))
+      newPasswordInput?.focus();
+    return !$gotErrors(...errorSources.currentPassword);
   };
 
   const cancelTOTPSetup = (): void => {
@@ -519,7 +431,7 @@
   };
 
   const enableTOTP = async (password?: string): Promise<boolean> => {
-    if (submitting || !$session.user)
+    if (submitting || !$user)
       return true;
 
     const totpErrors = validators.totp(totpVerification, false);
@@ -530,7 +442,7 @@
       return true;
     }
 
-    const body = { totp: totpVerification };
+    const body: JSONObject = { totp: totpVerification };
     if (password) {
       body.currentPassword = password;
     } else if (!$sudo) {
@@ -542,38 +454,26 @@
     }
 
     submitting = true;
-    let data: JSONObject;
-    try {
-      data = await apiFetch(`/users/${$session.user.id}`, "PUT", body);
-    } catch (error) {
-      catchError(error);
+    const { data } = await apiFetch(`/users/${$user.id}`, validateTOTPResponse, "PUT", body);
+
+    if (data) {
+      if (!$accountSocket?.connected)
+        updateUser(data);
+      cancelTOTPSetup();
       submitting = false;
-      await tick();
-      totpVerificationInput?.focus();
       return true;
     }
 
-    if (data.sudoUntil)
-      $session.user.sudoUntil = data.sudoUntil;
-
-    if (data.errors) {
-      submitting = false;
-      if (!currentSubmitFunction && $gotErrors("validation.errors.current-password.empty")) {
-        errors.clear("validation.errors.current-password.empty");
-        warnings.clear();
-        currentSubmitFunction = enableTOTP;
-        return false;
-      }
-      await tick();
-      totpVerificationInput?.focus();
-      return !$gotErrors(...errorSources.currentPassword);
-    }
-
-    $session.user.totpEnabled = true;
-    cancelTOTPSetup();
-    infoMessages.showTimed("account.totp-enabled");
     submitting = false;
-    return true;
+    if (!currentSubmitFunction && $gotErrors("validation.errors.current-password.empty")) {
+      errors.clear("validation.errors.current-password.empty");
+      warnings.clear();
+      currentSubmitFunction = enableTOTP;
+      return false;
+    }
+    await tick();
+    totpVerificationInput?.focus();
+    return !$gotErrors(...errorSources.currentPassword);
   };
 
   const onTOTPVerificationInput = (): void => {
@@ -583,24 +483,20 @@
       totpVerification = chars.slice(0, config.totp.codeLength).join("");
   };
 
-  const onTOTPVerificationKeydown = (event: KeyboardEvent): void => {
+  const onTOTPVerificationKeydown = async (event: KeyboardEvent): Promise<void> => {
     if (event.key === "Enter")
-      enableTOTP().catch(catchError);
+      await enableTOTP();
   };
 
   const getTOTPKey = async (): Promise<void> => {
     fetchingTOTPSecret = true;
-    let data: JSONObject;
-    try {
-      data = await apiFetch("/account/totp-key");
-    } catch {
+    const { data } = await apiFetch("/account/totp-key", validateTOTPKeyResponse);
+
+    if (!data) {
       fetchingTOTPSecret = false;
       return;
     }
-    if (data.errors) {
-      fetchingTOTPSecret = false;
-      return;
-    }
+
     totpKey = {
       expires: new Date(data.expires),
       key: data.key,
@@ -617,6 +513,7 @@
     try {
       await navigator.clipboard.writeText(totpKey.key);
     } catch (error) {
+      log(error);
       warnings.add("account.warnings.totp-secret-copy-failed");
       return;
     }
@@ -624,10 +521,10 @@
   };
 
   const disableTOTP = async (password?: string): Promise<boolean> => {
-    if (!$session.user?.totpEnabled || submitting)
+    if (!$user?.totpEnabled || submitting)
       return true;
 
-    const body = { totp: null };
+    const body: JSONObject = { totp: null };
     if (password) {
       body.currentPassword = password;
     } else if (!$sudo) {
@@ -639,37 +536,32 @@
     }
 
     submitting = true;
-    let data: JSONObject;
-    try {
-      data = await apiFetch(`/users/${$session.user.id}`, "PUT", body);
-    } catch (error) {
-      catchError(error);
+    const { data } = await apiFetch(`/users/${$user.id}`, validateTOTPResponse, "PUT", body);
+
+    if (data) {
+      if (data.sudoUntil)
+        $user.sudoUntil = data.sudoUntil;
+
+      if (!$accountSocket?.connected)
+        updateUser(data);
+
       submitting = false;
       return true;
     }
 
-    if (data.sudoUntil)
-      $session.user.sudoUntil = data.sudoUntil;
-
-    if (data.errors) {
-      submitting = false;
-      if (!currentSubmitFunction && $gotErrors("validation.errors.current-password.empty")) {
-        errors.clear("validation.errors.current-password.empty");
-        warnings.clear();
-        currentSubmitFunction = disableTOTP;
-        return false;
-      }
-      return !$gotErrors(...errorSources.currentPassword);
-    }
-
-    $session.user.totpEnabled = false;
-    infoMessages.showTimed("account.totp-disabled");
     submitting = false;
-    return true;
+
+    if (!currentSubmitFunction && $gotErrors("validation.errors.current-password.empty")) {
+      errors.clear("validation.errors.current-password.empty");
+      warnings.clear();
+      currentSubmitFunction = disableTOTP;
+      return false;
+    }
+    return !$gotErrors(...errorSources.currentPassword);
   };
 
   const updateLocale = async (id: string): Promise<void> => {
-    if (!$session.user || submitting || id === $session.user.locale)
+    if (!$user || submitting || id === $user.locale)
       return;
 
     const localeErrors = validators.locale(id);
@@ -679,26 +571,21 @@
     }
 
     submitting = true;
-    let data: JSONObject;
-    try {
-      data = await apiFetch(`/users/${$session.user.id}`, "PUT", { locale: id });
-    } catch (error) {
-      catchError(error);
-      submitting = false;
-      return;
-    }
+    const { data } = await apiFetch(
+      `/users/${$user.id}`, validatePutUserLocaleResponse, "PUT", { locale: id }
+    );
 
-    if (data.errors || data.locale !== id) {
+    if (!data) {
       submitting = false;
       return;
     }
 
     errors.clear(...errorSources.locale);
-    submitting = false;
-    $locale = id;
-    $session.user.locale = id;
-    selectedLocale = id;
+    if (!$accountSocket?.connected)
+      updateUser(data);
+    selectedLocale = data.locale;
     infoMessages.showTimed("account.locale-updated");
+    submitting = false;
   };
 
   const logoutAllSessions = async (): Promise<void> => {
@@ -706,32 +593,27 @@
       return;
 
     submitting = true;
-    let data: JSONObject;
-    try {
-      data = await apiFetch("/logout/all-sessions", "POST");
-    } catch (error) {
-      catchError(error);
-      submitting = false;
-      return;
-    }
-
-    if (data.errors) {
-      submitting = false;
-      return;
-    }
-
     errors.clear();
     warnings.clear();
     infoMessages.clear();
-    localStorage.setItem(config.csrfTokenField, data.csrfToken);
 
-    goto("/").catch(catchError);
-    $session.user = null;
+    const { data } = await apiFetch("/auth/logout/all-sessions", validateCSRFTokenResponse, "POST");
+
+    if (!data) {
+      submitting = false;
+      return;
+    }
+
+    if (!$accountSocket?.connected) {
+      localStorage.setItem(config.csrfTokenField, data.csrfToken);
+      goto(config.pages.index).catch(unexpected);
+      $user = null;
+    }
     submitting = false;
   };
 
   const deleteAccount = async (password?: string): Promise<boolean> => {
-    if (!$session.user || submitting)
+    if (!$user || submitting)
       return true;
 
     if (!password) {
@@ -743,26 +625,23 @@
     }
 
     submitting = true;
-    let data: JSONObject;
-    try {
-      data = await apiFetch(`/users/${$session.user.id}`, "DELETE", { password });
-    } catch (error) {
-      catchError(error);
-      submitting = false;
-      return true;
-    }
+    errors.clear();
+    warnings.clear();
 
-    if (data.errors) {
+    const { data } = await apiFetch(
+      `/users/${$user.id}`, validateCSRFTokenResponse, "DELETE", { password }
+    );
+
+    if (!data) {
       submitting = false;
       return !$gotErrors(...errorSources.currentPassword);
     }
 
-    errors.clear();
     infoMessages.clear();
     localStorage.setItem(config.csrfTokenField, data.csrfToken);
 
-    goto("/").catch(catchError);
-    $session.user = null;
+    goto(config.pages.index).catch(unexpected);
+    $user = null;
     infoMessages.showTimed("account.account-deleted");
     submitting = false;
     return true;
@@ -770,24 +649,29 @@
 
   const onUsernameInput = (): void => {
     errors.clear(...errorSources.username);
+    usernameUnavailable = false;
     const chars = [...username];
     if (chars.length > config.validationRules.username.maxLength)
       username = chars.slice(0, config.validationRules.username.maxLength).join("");
     if (usernameTimeout)
       clearTimeout(usernameTimeout);
+    // eslint-disable-next-line @typescript-eslint/no-misused-promises
     usernameTimeout = setTimeout(async () => {
       if (
-        username.trim() && username.trim().toLowerCase() !== $session.user.username.toLowerCase()
+        $user
+        && username.trim()
+        && username.trim().toLowerCase() !== $user.username.toLowerCase()
       ) {
-        let data: JSONObject;
-        try {
-          data = await apiFetch(`/users/username-available/${encodeURIComponent(username.trim())}`);
-        } catch (error) {
-          catchError(error);
+        const { data } = await apiFetch(
+          `/users/username-available/${encodeURIComponent(username.trim())}`,
+          validateUsernameAvailableResponse,
+        );
+
+        if (!data) {
           usernameUnavailable = false;
           return;
         }
-        usernameUnavailable = data.available === false;
+        usernameUnavailable = !data.available;
       } else {
         usernameUnavailable = false;
       }
@@ -803,7 +687,7 @@
 
   const submitWithCurrentPassword = async (): Promise<void> => {
     if (!currentSubmitFunction) {
-      errors.add("general.errors.unexpected");
+      unexpected("No current submit function");
       return;
     }
     const passwordErrors = validators.password(currentPassword, "current-password", false);
@@ -827,18 +711,97 @@
 
   const onCurrentPasswordKeydown = (event: KeyboardEvent): void => {
     if (event.key === "Enter")
-      submitWithCurrentPassword().catch(catchError);
+      submitWithCurrentPassword().catch(unexpected);
   };
 
-  /* eslint-disable @typescript-eslint/indent */
+  const onIconDragEnter = (event: DragEvent): void => {
+    if (
+      !inputsDisabled
+      && event.dataTransfer
+      && event.dataTransfer.items.length === 1
+      && event.dataTransfer.items[0].kind === "file"
+      && config.acceptedImageTypes.includes(event.dataTransfer.items[0].type)
+    )
+      iconDragover = true;
+  };
+
+  const onIconDragLeave = (): void => {
+    iconDragover = false;
+  };
+
+  const onIconDrop = (event: DragEvent): void => {
+    iconDragover = false;
+    if (
+      !inputsDisabled
+      && event.dataTransfer
+      && event.dataTransfer.items.length === 1
+      && event.dataTransfer.items[0].kind === "file"
+      && config.acceptedImageTypes.includes(event.dataTransfer.items[0].type)
+    )
+      iconFile = event.dataTransfer.items[0].getAsFile();
+  };
+
+  const onIconFilesChange = async (): Promise<void> => {
+    if (!iconFiles || iconFiles.length === 0) {
+      iconFile = null;
+    } else if (iconFiles.length > 1) {
+      errors.add("validation.errors.user-icon.multiple-files");
+    } else {
+      await tick();
+      iconFile = iconFiles[0];  // eslint-disable-line prefer-destructuring
+    }
+  };
+
+  const onIconFileChange = async (): Promise<void> => {
+    if (!iconFile || submitting || !$user)
+      return;
+
+    errors.clear(...errorSources.icon);
+    const iconErrors = await validators.userIcon(iconFile);
+    if (iconErrors.length > 0) {
+      iconFile = null;
+      iconFiles = null;
+      errors.add(...iconErrors);
+      return;
+    }
+
+    submitting = true;
+    submittingUserIcon = true;
+    const form = new FormData();
+    form.append("icon", iconFile, "");
+
+    const { data } = await apiFetch(`/users/${$user.id}/icon`, validateUserIconResponse, "PUT", form);
+
+    if (!data || !data.icon) {
+      submitting = false;
+      submittingUserIcon = false;
+      return;
+    }
+
+    if (!$accountSocket?.connected)
+      updateUser(data);
+
+    submitting = false;
+    submittingUserIcon = false;
+  };
+
+  type OnClickFunc<T extends unknown[]> = (...args: T) => Promise<unknown>;
+
+  const onClick = <T extends unknown[]>(func: OnClickFunc<T>, ...args: T): () => Promise<void> =>
+    async (): Promise<void> => {
+      await func(...args);
+    };
+
+  /* eslint-disable @typescript-eslint/indent, no-sequences */
   $: inputsDisabled = submitting;
-  $: iconFile, onIconFileChange().catch(catchError);
-  $: iconFiles, onIconFilesChange().catch(catchError);
+  $: userIconState = ($user && $cache.get($user.icon)?.state) || "not-loaded";
+  $: iconFile, onIconFileChange().catch(unexpected);
+  $: iconFiles, onIconFilesChange().catch(unexpected);
   $: textFieldsChanged =
-       (username.trim() && username.trim() !== $session.user?.username) || newPassword;
-  $: if (username.trim() && username.trim() !== $session.user?.username && newPassword)
+       Boolean((username.trim() && username.trim() !== $user?.username) || newPassword);
+  $: if (username.trim() && username.trim() !== $user?.username && newPassword)
        saveUsernamePasswordText = "account.change-username-and-password";
-     else if (username.trim() && username.trim() !== $session.user?.username)
+     else if (username.trim() && username.trim() !== $user?.username)
        saveUsernamePasswordText = "account.change-username";
      else if (newPassword)
        saveUsernamePasswordText = "account.change-password";
@@ -865,13 +828,7 @@
   @use "globals.scss" as g;
 
   $narrow-breakpoint: 33rem;
-  $body-padding: 1rem;
   $user-icon-size: 10rem;
-
-  main {
-    max-width: 40rem;
-    margin: auto;
-  }
 
   .current-password {
     position: fixed;
@@ -909,27 +866,14 @@
     background-color: g.$red;
   }
 
-  .main-heading {
-    height: g.$icon-button-size;
-    display: inline-flex;
-    align-items: end;
-    font-size: 2rem;
-    margin: 0 $body-padding;
-  }
-
   .subheading {
     margin: 0.25rem 0;
     font-size: 1.25rem;
-    font-weight: 500;
   }
 
   .icon-heading {
     display: flex;
     gap: 0.5rem;
-  }
-
-  .avoid-navbar-intersection {
-    margin-top: g.$icon-button-size;
   }
 
   .basic-info {
@@ -943,18 +887,26 @@
     }
   }
 
+  $text-field-height: 1.5rem;
+  $text-fields-gap: 1.5rem;
+
   .basic-info-text-fields {
-    width: calc(100% - 2 * $body-padding);
-    margin: 1rem 0;
+    width: calc(100% - 2 * g.$content-padding);
+    margin: 2rem 0 1rem;
     display: flex;
     flex-direction: column;
-    justify-content: center;
     align-items: center;
-    gap: 1.5rem;
+    gap: $text-fields-gap;
 
     @media(min-width: $narrow-breakpoint) {
       width: 20rem;
+      height: 2 * $text-field-height + 2 * $text-fields-gap + g.$icon-button-size;
     }
+  }
+
+  .text-field {
+    width: 100%;
+    height: $text-field-height;
   }
 
    .save-username-password {
@@ -999,7 +951,14 @@
     position: absolute;
     width: $user-icon-size;
     height: $user-icon-size;
+    display: flex;
+    justify-content: center;
+    align-items: center;
     image-rendering: high-quality;
+  }
+
+  .spinner {
+    font-size: 3rem;
   }
 
   .user-icon-overlay {
@@ -1123,6 +1082,13 @@
     display: flex;
     flex-direction: column;
     align-items: center;
+    margin: 0 1rem;
+
+    @media(min-width: $narrow-breakpoint) {
+      width: max-content;
+      align-items: start;
+      margin-top: 2rem;
+    }
   }
 
   .locale-buttons {
@@ -1130,7 +1096,6 @@
     justify-content: center;
     align-items: start;
     gap: 0.5rem;
-    margin: 0 1rem;
 
     @media(min-width: $narrow-breakpoint) {
       justify-content: start;

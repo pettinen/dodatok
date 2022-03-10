@@ -1,5 +1,6 @@
+/* eslint-disable @typescript-eslint/consistent-type-imports */
 type Alert = import("$lib/errors").Alert;
-type User = import("$lib/types").User;
+type User = import("$lib/utils").User;
 
 
 declare namespace App {

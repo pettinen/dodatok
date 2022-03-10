@@ -15,8 +15,11 @@ export const validators = {
     const { length } = [...value];
     if (length === 0)
       return [`validation.errors.${fieldName}.empty`];
-    if (enforceMinLength && length < rules.password.minLength)
-      return [[`validation.errors.${fieldName}.too-short`, { minLength: rules.password.minLength }]];
+    if (enforceMinLength && length < rules.password.minLength) {
+      return [
+        [`validation.errors.${fieldName}.too-short`, { minLength: rules.password.minLength }],
+      ];
+    }
     if (length > rules.password.maxLength)
       return [[`validation.errors.${fieldName}.too-long`, { maxLength: rules.password.maxLength }]];
     return [];
@@ -32,10 +35,11 @@ export const validators = {
   userIcon: (file: File): MaybePromise<Message[]> => {
     if (!config.acceptedImageTypes.includes(file.type))
       return ["validation.errors.user-icon.invalid-file-type"];
-    if (file.size > rules.userIcon.maxSizeMB * 1_000_000)
+    if (file.size > rules.userIcon.maxSizeMB * 1_000_000) {
       return [
         ["validation.errors.user-icon.too-large", { maxSizeMB: rules.userIcon.maxSizeMB }],
       ];
+    }
     return new Promise((resolve) => {
       const reader = new FileReader();
       reader.addEventListener("load", () => {
@@ -75,8 +79,11 @@ export const validators = {
     const { length } = [...value];
     if (length === 0)
       return [`validation.errors.${fieldName}.empty`];
-    if (enforceMinLength && length < rules.username.minLength)
-      return [[`validation.errors.${fieldName}.too-short`, { minLength: rules.username.minLength }]];
+    if (enforceMinLength && length < rules.username.minLength) {
+      return [
+        [`validation.errors.${fieldName}.too-short`, { minLength: rules.username.minLength }],
+      ];
+    }
     if (length > rules.username.maxLength)
       return [[`validation.errors.${fieldName}.too-long`, { maxLength: rules.username.maxLength }]];
     return [];

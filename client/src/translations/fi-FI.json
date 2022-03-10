@@ -3,7 +3,9 @@
     "change-password": "Vaihda salasana",
     "change-username": "Vaihda käyttäjätunnus",
     "current-password": "Nykyinen salasana",
+    "delete-account": "Poista käyttäjä",
     "disable-totp": "Poista kaksivaiheinen vahvistus käytöstä",
+    "enable-totp": "Ota kaksivaiheinen vahvistus käyttöön",
     "errors": {
       "invalid-current-password": "Nykyinen salasana on väärin.",
       "username-not-available": "Käyttäjätunnus on jo käytössä."
@@ -12,16 +14,13 @@
     "icon-removed": "Kuvake poistettu.",
     "locale": "Kieli",
     "logout-all-sessions": "Kirjaudu ulos kaikkialta",
-    "no-changes-made": "Ei muutoksia",
     "password-changed": "Salasana vaihdettu.",
     "remove-icon": "Poista kuvake",
     "save-changes": "Tallenna muutokset",
     "totp-disabled": "Kaksivaiheinen vahvistus on poistettu käytöstä.",
-    "user-icon": "User icon",
+    "user-icon": "Käyttäjän kuvake",
     "username-changed": "Käyttäjätunnus vaihdettu.",
-    "warnings": {
-      "no-changes-made": "Et tehnyt muutoksia."
-    },
+    "username-unavailable": "Käyttäjätunnus on jo varattu",
     "your-account": "Käyttäjätilisi"
   },
   "auth": {

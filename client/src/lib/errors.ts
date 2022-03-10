@@ -1,12 +1,12 @@
 import { deepEqual } from "fast-equals";
 import { _ } from "svelte-i18n";
-import { derived, get, writable } from "svelte/store";
+import { derived, writable } from "svelte/store";
 import type { Readable, Writable } from "svelte/store";
 
 import { dev } from "$app/env";
 
 import { config } from "$lib/config";
-import type { JSONObject } from "$lib/types";
+import type { JSONPrimitive } from "$lib/types";
 
 
 export class AppError extends Error {
@@ -21,10 +21,10 @@ export interface APIAlert {
   details?: string;
   id: string;
   source: string;
-  values?: JSONObject;
+  params?: Record<string, number>;
 }
 
-export type Message = string | [string, JSONObject];
+export type Message = string | [string, Record<string, JSONPrimitive>];
 export type Alert = Message;
 
 export const format = derived(_, ($_) => (message: Message): string => {
@@ -61,20 +61,20 @@ export const formatWarning = derived(_, ($_) => (warning: Alert): string => {
   return rv;
 });
 
-interface AlertStore extends Writable<Alert[]> {1
+interface AlertStore extends Writable<Alert[]> {
   add: (...alerts: Alert[]) => void;
   addFromAPI: (alerts: APIAlert[]) => void;
-  clear: (...clearSources: Array<string | RegExp>) => void;
+  clear: (...clearSources: Array<RegExp | string>) => void;
 }
 
 export const convertAPIAlert = (type: APIAlertType) => (error: APIAlert): Alert => {
   const alertID = `${error.source}.${type}s.${error.id}`;
-  if ("values" in error)
-    return [alertID, error.values];
+  if ("params" in error)
+    return [alertID, error.params];
   return alertID;
 };
 
-const alertFilter = (searches: Array<string | RegExp>, revert = false) =>
+const alertFilter = (searches: Array<RegExp | string>, revert = false) =>
   (alert: Alert): boolean => {
     const alertID = Array.isArray(alert) ? alert[0] : alert;
     for (const search of searches) {
@@ -89,36 +89,37 @@ const alertFilter = (searches: Array<string | RegExp>, revert = false) =>
   };
 
 const createAlertStore = (type: APIAlertType): AlertStore => {
-  const alertStore: Writable<Alert[]> = writable([]);
+  const { set, subscribe, update }: Writable<Alert[]> = writable([]);
 
   return {
     add: (...alerts: Alert[]): void => {
-      const current = get(alertStore);
-      const newAlerts = alerts.filter((alert) =>
-        !current.some((existing) => deepEqual(alert, existing)));
-      alertStore.update((store) => [...newAlerts, ...store]);
+      update((current) => {
+        const newAlerts = alerts.filter((alert) =>
+          !current.some((existing) => deepEqual(alert, existing)));
+        return [...newAlerts, ...current];
+      });
     },
     addFromAPI(alerts: APIAlert[]): void {
       this.add(...alerts.map(convertAPIAlert(type)));
     },
-    clear: (...searches: Array<string | RegExp>): void => {
+    clear: (...searches: Array<RegExp | string>): void => {
       if (searches.length > 0)
-        alertStore.update((store) => store.filter(alertFilter(searches, true)));
+        update((current) => current.filter(alertFilter(searches, true)));
       else
-        alertStore.set([]);
+        set([]);
     },
-    set: alertStore.set,
-    subscribe: alertStore.subscribe,
-    update: alertStore.update,
+    set,
+    subscribe,
+    update,
   };
 };
 
-export const errors: AlertStore = createAlertStore("error");
-export const warnings: AlertStore = createAlertStore("warning");
+export const errors = createAlertStore("error");
+export const warnings = createAlertStore("warning");
 
-export const gotErrors: Readable<(...searches: Array<string | RegExp>) => boolean> = derived(
+export const gotErrors: Readable<(...searches: Array<RegExp | string>) => boolean> = derived(
   errors,
-  ($errors) => (...searches: Array<string | RegExp>) => $errors.some(alertFilter(searches)),
+  ($errors) => (...searches: Array<RegExp | string>) => $errors.some(alertFilter(searches)),
 );
 
 
@@ -128,49 +129,47 @@ export interface InfoMessage {
   timeout?: ReturnType<typeof setTimeout>;
 }
 
-interface InfoMessageStore extends Writable<InfoMessage[]> {
+interface InfoMessageStore extends Readable<InfoMessage[]> {
   clear: () => void;
   show: (...messages: Message[]) => void;
   showTimed: (...messages: Message[]) => void;
 }
 
 const createInfoMessageStore = (): InfoMessageStore => {
-  const messageStore: Writable<InfoMessage[]> = writable([]);
+  const { set, subscribe, update }: Writable<InfoMessage[]> = writable([]);
 
   const add = (time: number | null, messages: Message[]): void => {
-    const current = get(messageStore);
-    const newMessages: InfoMessage[] = [];
+    update((current) => {
+      const newMessages: InfoMessage[] = [];
 
-    for (const newMessage of messages) {
-      const existing = current.find(({ message }) => deepEqual(message, newMessage));
-      if (existing) {
-        if (existing.timeout)
-          clearTimeout(existing.timeout);
-        if (time) {
-          existing.timeout = setTimeout(() => {
-            messageStore.update((store) =>
-              store.filter((messageData) => messageData.id !== existing.id));
-          }, time);
+      for (const newMessage of messages) {
+        const existing = current.find(({ message }) => deepEqual(message, newMessage));
+        if (existing) {
+          if (existing.timeout)
+            clearTimeout(existing.timeout);
+          if (time) {
+            existing.timeout = setTimeout(() => {
+              update((old) => old.filter((messageData) => messageData.id !== existing.id));
+            }, time);
+          }
+        } else {
+          const id = Symbol("InfoMessage");
+          const newInfoMessage: InfoMessage = { id, message: newMessage };
+          if (time) {
+            newInfoMessage.timeout = setTimeout(() => {
+              update((old) => old.filter((message) => message.id !== id));
+            }, time);
+          }
+          newMessages.push(newInfoMessage);
         }
-      } else {
-        const id = Symbol("InfoMessage");
-        let timeout: ReturnType<typeof setTimeout> | null;
-        const newInfoMessage: InfoMessage = { id, message: newMessage };
-        if (time) {
-          newInfoMessage.timeout = setTimeout(() => {
-            messageStore.update((store) => store.filter((message) => message.id !== id));
-          }, time);
-        }
-        newMessages.push(newInfoMessage);
       }
-    }
-    if (newMessages.length > 0)
-      messageStore.update((store) => [...newMessages, ...store]);
+      return [...newMessages, ...current];
+    });
   };
 
   return {
     clear: (): void => {
-      messageStore.set([]);
+      set([]);
     },
     show: (...messages: Message[]): void => {
       add(null, messages);
@@ -178,13 +177,13 @@ const createInfoMessageStore = (): InfoMessageStore => {
     showTimed: (...messages: Message[]): void => {
       add(config.defaultMessageTimeout, messages);
     },
-    subscribe: messageStore.subscribe,
+    subscribe,
   };
 };
 
 export const formatInfoMessage = derived(_, ($_) => ({ message }: InfoMessage): string => {
   const specialCases = new Set(["general.update-available"]);
-  if (specialCases.has(message))
+  if (typeof message === "string" && specialCases.has(message))
     return message;
 
   if (Array.isArray(message)) {

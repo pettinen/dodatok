@@ -1,0 +1,9 @@
+{
+  "search_path": [
+    "/home/aho/.cache/pypoetry/virtualenvs/base-server-0EzbMQQm-py3.10/lib/python3.10/site-packages",
+    "stubs"
+  ],
+  "source_directories": ["api"],
+  "strict": true,
+  "taint_models_path": "/home/aho/.cache/pypoetry/virtualenvs/base-server-0EzbMQQm-py3.10/lib"
+}

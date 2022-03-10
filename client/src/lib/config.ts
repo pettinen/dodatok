@@ -1,21 +1,23 @@
 import { dev } from "$app/env";
+import { base } from "$app/paths";
 
 
 export const config = {
   acceptedImageTypes: ["image/jpeg", "image/png", "image/webp"],
-  apiURL: "http://kotori.lab:5000",
+  apiURL: "http://api.kotori.lab:5000",
   baseURLs: {
-    files: "http://kotori.lab:9000/files",
-    userIcon: "http://kotori.lab:9000/user-icons",
+    files: "http://s3.kotori.lab:9000/files",
+    userIcon: "http://s3.kotori.lab:9000/user-icons",
   },
   cookies: {
+    csrfToken: "csrfToken",
+    rememberToken: "rememberToken",
+    session: "session",
     options: {
-      path: "/",
+      path: `${base}/`,
       sameSite: "Lax",
       secure: !dev,
     },
-    rememberToken: "rememberToken",
-    session: "session",
   },
   csrfTokenField: "csrfToken",
   debounceTime: 500,
@@ -27,12 +29,9 @@ export const config = {
     "fi-FI": "Suomi",
   },
   pages: {
-    authRequired: ["/account"],
-    noAuthRequired: ["/sign-up"],
-  },
-  socketio: {
-    endpoint: "ws://kotori.lab:5000",
-    path: "/socket/",
+    authRequired: [`${base}/account`],
+    noAuthRequired: [`${base}/sign-up`],
+    index: `${base}/`,
   },
   totp: {
     codeLength: 6,
@@ -52,4 +51,10 @@ export const config = {
       minSize: 20,
     },
   },
+  websocket: {
+    account: {
+      endpoint: "ws://api.kotori.lab:5000/account/socket",
+      tokenEndpoint: "/account/socket/token",
+    }
+  }
 };

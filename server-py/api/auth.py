@@ -1,7 +1,7 @@
 import asyncio
 import secrets
 from datetime import datetime, timedelta
-from typing import Optional, TypedDict
+from typing import Optional, TypedDict, cast
 
 from argon2.exceptions import InvalidHash, VerificationError, VerifyMismatchError
 from asyncpg import Connection
@@ -10,8 +10,9 @@ from pyotp import TOTP
 from quart import Blueprint, ResponseReturnValue, current_app, g, make_response, request
 
 from api import services
+from api.sockets import account_socket, user_room
 from api.utils import (
-    APIError,
+    Alert,
     UnexpectedError,
     api_error,
     auth_required,
@@ -69,7 +70,7 @@ class LoginResponseBase(TypedDict):
     user: UserResponse
 
 class LoginResponse(LoginResponseBase, total=False):
-    warnings: list[APIError]
+    warnings: list[Alert]
 
 
 async def insert_remember_token(
@@ -107,10 +108,9 @@ async def insert_session(
     csrf_token: str,
     *,
     sudo: bool,
-    connection = None
+    connection: Optional[Connection] = None
 ) -> tuple[str, datetime]:
-    if connection is None:
-        connection = services.db
+    db = connection or services.db
 
     now = utcnow()
     session_expires = now + current_app.config["SESSION_LIFETIME"]
@@ -121,7 +121,7 @@ async def insert_session(
 
     async def execute_insert_session() -> str:
         session_id = secrets.token_urlsafe(current_app.config["SESSION_ID_BYTES"])
-        await connection.execute(
+        await db.execute(
             """
             INSERT INTO "sessions"(
                 "id",
@@ -165,7 +165,7 @@ async def csrf_token() -> ResponseReturnValue:
 @rate_limit("get-session", limit=10, seconds=60)
 async def get_session() -> ResponseReturnValue:
     if current_app.config["REMEMBER_TOKEN_COOKIE_NAME"] not in request.cookies:
-        return single_error("auth", "no-valid-remember-token")
+        return await single_error("auth", "no-valid-remember-token")
 
     try:
         remember_id, remember_secret = request.cookies[
@@ -173,33 +173,41 @@ async def get_session() -> ResponseReturnValue:
         ].split(":")
     except ValueError:
         return await delete_auth_cookies(
-            single_error("auth", "no-valid-remember-token")
+            await single_error("auth", "no-valid-remember-token")
         )
     if not remember_id or not remember_secret:
         return await delete_auth_cookies(
-            single_error("auth", "no-valid-remember-token")
+            await single_error("auth", "no-valid-remember-token")
         )
 
-    token = await services.db.fetchrow(
-        """
-        SELECT
-            "remember_tokens"."user_id",
-            "remember_tokens"."secret_hash",
-            "users"."disabled"
-        FROM "remember_tokens"
-            JOIN "users" ON "remember_tokens"."user_id" = "users"."id"
-        WHERE "remember_tokens"."id" = $1
-        """,
-        remember_id,
+    class DBResponse(TypedDict):
+        user_id: str
+        secret_hash: str
+        disabled: bool
+
+    token = cast(
+        DBResponse,
+        await services.db.fetchrow(
+            """
+            SELECT
+                "remember_tokens"."user_id",
+                "remember_tokens"."secret_hash",
+                "users"."disabled"
+            FROM "remember_tokens"
+                JOIN "users" ON "remember_tokens"."user_id" = "users"."id"
+            WHERE "remember_tokens"."id" = $1
+            """,
+            remember_id,
+        ),
     )
 
     if token is None:
         return await delete_auth_cookies(
-            single_error("auth", "no-valid-remember-token")
+            await single_error("auth", "no-valid-remember-token")
         )
 
     if token["disabled"]:
-        return await delete_auth_cookies(single_error("auth", "account-disabled"))
+        return await delete_auth_cookies(await single_error("auth", "account-disabled"))
 
     if not secrets.compare_digest(token["secret_hash"], sha3_256(remember_secret)):
         # Possible session hijack attempt, invalidate sessions
@@ -228,7 +236,7 @@ async def get_session() -> ResponseReturnValue:
             "session-compromise-update-password_change_reason",
         )
         return await delete_auth_cookies(
-            single_error("auth", "remember-token-secret-mismatch")
+            await single_error("auth", "remember-token-secret-mismatch")
         )
 
     csrf_token = secrets.token_urlsafe(current_app.config["CSRF_TOKEN_BYTES"])
@@ -281,25 +289,38 @@ async def get_session() -> ResponseReturnValue:
 async def login(*, request_data: LoginSchema) -> ResponseReturnValue:
     warnings = []
 
-    data = await services.db.fetchrow(
-        """
-        SELECT
-            "id",
-            "username",
-            "password_hash",
-            "totp_key",
-            "last_used_totp",
-            "password_change_reason",
-            "disabled",
-            "icon",
-            "locale"
-        FROM "users" WHERE lower("username") = lower($1)
-        """,
-        request_data["username"],
-    )
+    class DBResponse(TypedDict):
+        id: str
+        username: str
+        password_hash: str
+        totp_key: Optional[str]
+        last_used_totp: Optional[str]
+        password_change_reason: Optional[str]
+        disabled: bool
+        icon: Optional[str]
+        locale: str
 
+    data = cast(
+        DBResponse,
+        await services.db.fetchrow(
+            """
+            SELECT
+                "id",
+                "username",
+                "password_hash",
+                "totp_key",
+                "last_used_totp",
+                "password_change_reason",
+                "disabled",
+                "icon",
+                "locale"
+            FROM "users" WHERE lower("username") = lower($1)
+            """,
+            request_data["username"],
+        ),
+    )
     if data is None:
-        return single_error("auth", "invalid-credentials")
+        return await single_error("auth", "invalid-credentials")
 
     try:
         password_hash = services.fernet.decrypt(data["password_hash"])
@@ -311,7 +332,7 @@ async def login(*, request_data: LoginSchema) -> ResponseReturnValue:
     try:
         services.password_hasher.verify(password_hash, request_data["password"])
     except VerifyMismatchError:
-        return single_error("auth", "invalid-credentials")
+        return await single_error("auth", "invalid-credentials")
     except (InvalidHash, VerificationError) as exc:
         raise UnexpectedError(f"Could not verify password of user {data['id']}: {exc}")
 
@@ -328,19 +349,19 @@ async def login(*, request_data: LoginSchema) -> ResponseReturnValue:
         )
 
     if data["disabled"]:
-        return single_error("auth", "account-disabled")
+        return await single_error("auth", "account-disabled")
 
     if data["totp_key"] is not None:
         if "totp" not in request_data:
-            return single_error("auth", "totp-required")
+            return await single_error("auth", "totp-required")
         totp = TOTP(services.fernet.decrypt(data["totp_key"]))
         if not totp.verify(
             request_data["totp"],
             valid_window=current_app.config["TOTP_VALID_WINDOW"],
         ):
-            return single_error("auth", "invalid-totp")
+            return await single_error("auth", "invalid-totp")
         if request_data["totp"] == data["last_used_totp"]:
-            return single_error("login", "totp-already-used")
+            return await single_error("login", "totp-already-used")
         run_task(
             services.db.execute(
                 'UPDATE "users" SET "last_used_totp" = $1 WHERE "id" = $2',
@@ -461,6 +482,12 @@ async def logout_all_sessions() -> ResponseReturnValue:
             )
 
     csrf_token = secrets.token_urlsafe(current_app.config["CSRF_TOKEN_BYTES"])
+    run_task(
+        account_socket.emit(
+            "logout_all_sessions", csrf_token, to=user_room(g.user["id"])
+        ),
+        "emit-logout_all_sessions",
+    )
     response = await delete_auth_cookies({"csrfToken": csrf_token})
     response.set_cookie(
         current_app.config["CSRF_COOKIE_NAME"],

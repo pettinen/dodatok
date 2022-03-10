@@ -1,0 +1,45 @@
+[tool.poetry]
+name = "base-server"
+version = "0.1.0"
+description = ""
+authors = ["Jeremias Pettinen <hi@jeremi.as>"]
+license = "ISC"
+
+[tool.poetry.dependencies]
+python = "^3.10"
+quart = "^0.16.3"
+asyncpg = "^0.25.0"
+cryptography = "^36.0.1"
+argon2-cffi = "^21.3.0"
+jsonschema = "^4.4.0"
+pyotp = "^2.6.0"
+qrcode = "^7.3.1"
+minio = "^7.1.3"
+Pillow = "^9.0.1"
+aioredis = {extras = ["hiredis"], version = "^2.0.1"}
+miscreant = "^0.3.0"
+python-socketio = "^5.5.2"
+
+[tool.poetry.dev-dependencies]
+black = "^22.1.0"
+poethepoet = "^0.12.3"
+types-Pillow = "^9.0.6"
+types-jsonschema = "^4.4.1"
+typing-extensions = "^4.1.1"
+mypy = "^0.931"
+pyre-check = "^0.9.10"
+pyright = "^1.1.225"
+
+[tool.poe.tasks]
+dev = "hypercorn --bind 0.0.0.0:5000 --reload api:app"
+init = { script = "api:initialize()" }
+init-dev = { script = "api:initialize(reset=True, populate=True)" }
+
+[tool.mypy]
+files = "api"
+mypy_path = "stubs"
+strict = true
+
+[build-system]
+requires = ["poetry-core>=1.0.0"]
+build-backend = "poetry.core.masonry.api"

@@ -1,7 +1,4 @@
-<div class=content>
-  <h1>{$_("general.errors.oops")}</h1>
-  <p>{errorText}</p>
-</div>
+<ErrorPage>{errorText}</ErrorPage>
 
 <script context=module lang=ts>
   import type { ErrorLoad } from "@sveltejs/kit";
@@ -11,6 +8,8 @@
 
 <script lang=ts>
   import { _ } from "svelte-i18n";
+
+  import ErrorPage from "$lib/components/ErrorPage.svelte";
 
 
   export let error: Error;

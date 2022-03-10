@@ -22,12 +22,12 @@
       "username-not-available": "The requested username is taken."
     },
     "icon": "Icon",
+    "icon-load-failed": "Failed to load icon",
     "icon-removed": "Icon removed.",
     "icon-updated": "Icon updated.",
     "locale": "Language",
     "locale-updated": "Language updated.",
     "logout-all-sessions": "Log out of all sessions",
-    "no-changes-made": "No changes made",
     "password-changed": "Your password has been changed.",
     "restore-icon": "Restore old icon",
     "remove-icon": "Remove icon",
@@ -55,19 +55,20 @@
       "invalid-totp": "The two-factor authentication code is invalid.",
       "not-logged-in": "You are not logged in.",
       "remember-token-secret-mismatch": "Possible session hijacking detected. You have been logged out of all sessions as a precaution.",
-      "requires-login": "Log in to view this page.",
-      "requires-no-login": "You\u2019re already logged in, you don\u2019t need this page!",
       "session-expired": "Session expired. Please log in again.",
+      "session-fetch-failed": "There are currently some problems with logging in.",
       "totp-required": "Please enter a two-factor authentication code.",
-      "unauthenticated-csrf-token-fetch-failed": "There are currently some problems with logging in.",
       "unexpected": "Unexpected authentication error."
     },
+    "requires-login": "Log in to view this page.",
+    "requires-no-login": "You\u2019re already logged in, you don\u2019t need this page!",
     "warnings": {
       "unused-totp": "A two-factor authentication code was supplied, but your account does not have 2FA enabled."
     }
   },
   "csrf": {
     "errors": {
+      "fetch-failed": "There are currently some problems with logging in.",
       "invalid-csrf-token": "Please try again.",
       "missing-csrf-cookie": "Please try again.",
       "missing-csrf-header": "Please try again."

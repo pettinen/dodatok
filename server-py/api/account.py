@@ -8,7 +8,7 @@ from qrcode.image.svg import SvgPathImage
 from pyotp import TOTP
 from quart import Blueprint, ResponseReturnValue, current_app, g
 
-from api import services
+from api import config, services
 from api.utils import (
     auth_required,
     rate_limit,
@@ -30,7 +30,7 @@ def generate_qr_code_svg(data: str) -> str:
 
 
 def generate_totp_key() -> str:
-    return base64.b32encode(os.urandom(current_app.config["TOTP_KEY_BYTES"])).decode()
+    return base64.b32encode(os.urandom(config["TOTP_KEY_BYTES"])).decode()
 
 
 @account.get("/totp-key")
@@ -38,13 +38,13 @@ def generate_totp_key() -> str:
 @rate_limit("totp-key", limit=5, seconds=60)
 async def totp_key() -> ResponseReturnValue:
     if g.user["totp_key"] is not None:
-        return single_error("account", "totp-already-enabled")
+        return await single_error("account", "totp-already-enabled")
 
     expires = (utcnow() + current_app.config["NEW_TOTP_KEY_LIFETIME"]).replace(
         microsecond=0
     )
 
-    async def execute_insert_totp_key():
+    async def execute_insert_totp_key() -> str:
         key = generate_totp_key()
         await services.db.execute(
             """
@@ -59,9 +59,12 @@ async def totp_key() -> ResponseReturnValue:
         return key
 
     key = await try_insert_unique(execute_insert_totp_key, "TOTP key")
-    totp_uri = TOTP(key).provisioning_uri(
-        g.user["username"], current_app.config["APP_NAME"]
-    )
+    totp_uri = TOTP(
+        key,
+        digits=current_app.config["TOTP_DIGITS"],
+        name=g.user["username"],
+        issuer=current_app.config["APP_NAME"],
+    ).provisioning_uri()
     qr = generate_qr_code_svg(totp_uri)
 
     return {
@@ -79,7 +82,7 @@ async def websocket_token() -> ResponseReturnValue:
         microsecond=0
     )
 
-    async def execute_insert_websocket_token():
+    async def execute_insert_websocket_token() -> str:
         token = secrets.token_urlsafe(current_app.config["WEBSOCKET_TOKEN_BYTES"])
         await services.db.execute(
             """

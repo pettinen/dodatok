@@ -12,10 +12,6 @@ body {
   font-weight: 300;
   overflow-x: hidden;
   width: 100vw;
-
-  &.preload * {
-    transition: none !important;
-  }
 }
 
 .button {
@@ -103,4 +99,10 @@ body {
   animation-duration: 2s;
   animation-iteration-count: infinite;
   animation-timing-function: linear;
+}
+
+main {
+  max-width: 40rem;
+  margin: auto;
+  padding: 0 g.$content-padding;
 }

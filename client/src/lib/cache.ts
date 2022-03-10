@@ -1,7 +1,9 @@
-import { derived, get, writable } from "svelte/store";
+import { derived, writable } from "svelte/store";
 import type { Readable } from "svelte/store";
 
 import { browser } from "$app/env";
+
+import { unexpected } from "$lib/utils";
 
 
 class CacheEntryLoaded {
@@ -26,36 +28,41 @@ interface CacheEntryNotLoaded {
 export type CacheEntry = CacheEntryLoaded | CacheEntryNotLoaded;
 
 interface CacheStore extends Readable<Map<string, CacheEntry>> {
-  load: (url: string, reload?: boolean) => Promise<void>;
+  load: (url: string, reload?: boolean) => void;
 }
 
 const createCache = (): CacheStore => {
-  const store = writable(new Map<string, CacheEntry>());
+  const { subscribe, update } = writable(new Map());
+
+  const doFetch = async (url: string): Promise<void> => {
+    let response: Response;
+    try {
+      response = await fetch(url);
+      if (!response.ok)
+        throw new Error("Cache fetch failed");
+    } catch {
+      update((current) => current.set(url, { state: "failed" }));
+      return;
+    }
+
+    const blob = await response.blob();
+    update((current) => current.set(url, new CacheEntryLoaded(blob)));
+  };
 
   return {
-    load: async (url: string, reload = false): Promise<void> => {
+    load: (url: string, reload = false): void => {
       if (!browser)
         return;
 
-      if (get(store).has(url) && !reload)
-        return;
-
-      store.update((map) => map.set(url, { state: "loading" }));
-
-      let response: Response;
-      try {
-        response = await fetch(url);
-        if (!response.ok)
-          throw new Error("Cache fetch failed");
-      } catch {
-        store.update((map) => map.set(url, { state: "failed" }));
-        return;
-      }
-
-      const blob = await response.blob();
-      store.update((map) => map.set(url, new CacheEntryLoaded(blob)));
+      update((current) => {
+        if (reload || !current.has(url)) {
+          current.set(url, { state: "loading" });
+          doFetch(url).catch(unexpected);
+        }
+        return current;
+      });
     },
-    subscribe: store.subscribe,
+    subscribe,
   };
 };
 

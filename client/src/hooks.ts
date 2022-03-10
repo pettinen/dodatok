@@ -1,19 +1,43 @@
 import { parse as parseCookies, serialize as serializeCookie } from "cookie";
+import type { CookieSerializeOptions } from "cookie";
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+import type { RequestInfo, RequestInit, Response } from "node-fetch";
 import { parse as parseSetCookie } from "set-cookie-parser";
 import type { GetSession, Handle } from "@sveltejs/kit";
 
 import { config } from "$lib/config";
 import { convertAPIAlert } from "$lib/errors";
 import type { APIAlert } from "$lib/errors";
-import { convertAPIUser } from "$lib/utils";
+import { validateAPIErrors, validateCSRFTokenResponse, validateUserResponse } from "$lib/types";
+import { convertAPIUser, log } from "$lib/utils";
 
 
-export const getSession: GetSession = async ({ locals }) => ({
-  ...locals,
-  user: convertAPIUser(locals.user),
-});
+// eslint-disable-next-line no-implicit-globals
+declare function fetch(url: RequestInfo, init?: RequestInit): Promise<Response>;
 
+export const getSession: GetSession = ({ locals }) => locals;
+
+const serializeSetCookie = (name: string, value: string): string => {
+  const cookieOptions: CookieSerializeOptions = {
+    httpOnly: true,
+    path: config.cookies.options.path,
+    secure: config.cookies.options.secure,
+  };
+  if (
+    config.cookies.options.sameSite === "strict"
+    || config.cookies.options.sameSite === "lax"
+    || config.cookies.options.sameSite === "none"
+  ) {
+    cookieOptions.sameSite = config.cookies.options.sameSite;
+  }
+  return serializeCookie(name, value, cookieOptions);
+};
+
+/* eslint-disable require-atomic-updates */
 export const handle: Handle = async ({ event, resolve }) => {
+  if (/^\/api($|\/)/u.test(event.url.pathname))
+    return await resolve(event);
+
   let sessionID = "";
   event.locals = {
     csrfToken: null,
@@ -21,14 +45,32 @@ export const handle: Handle = async ({ event, resolve }) => {
     user: null,
   };
 
-  interface AuthCookies {
+  interface Cookies {
+    csrfToken?: string;
     rememberToken?: string;
     session?: string;
   }
-  const authCookies: AuthCookies = {};
+  const cookies: Cookies = {};
 
-  const addErrorsFromAPI = (errors: APIAlert[]): void => {
-    for (const error of errors)
+  const addCookiesFromResponse = (response: Response): void => {
+    for (const cookie of response.headers.raw()["set-cookie"] ?? []) {
+      const [parsedCookie] = parseSetCookie(cookie);
+      if (parsedCookie.name === config.cookies.session) {
+        cookies.session = cookie;
+        sessionID = parsedCookie.value;
+      } else if (parsedCookie.name === config.cookies.rememberToken) {
+        cookies.rememberToken = cookie;
+      }
+    }
+  };
+
+  const addCSRFToken = (token: string): void => {
+    cookies.csrfToken = serializeSetCookie(config.cookies.csrfToken, token);
+    event.locals.csrfToken = token;
+  };
+
+  const addErrorsFromAPI = (apiErrors: APIAlert[]): void => {
+    for (const error of apiErrors)
       event.locals.errors.add(convertAPIAlert("error")(error));
   };
 
@@ -38,32 +80,41 @@ export const handle: Handle = async ({ event, resolve }) => {
     if (requestCookies.session) {
       sessionID = requestCookies.session;
     } else if (requestCookies.rememberToken) {
-      let sessionResponse: Response;
+      let sessionResponse: Response | null = null;
       try {
         sessionResponse = await fetch(`${config.apiURL}/get-session`, {
-          headers: event.request.headers,
+          headers: { Cookie: requestCookiesRaw },
           method: "POST",
         });
-        for (const cookie of sessionResponse.headers.raw()["set-cookie"]) {
-          const [parsedCookie] = parseSetCookie(cookie);
-          if (parsedCookie.name === config.cookies.session) {
-            authCookies.session = cookie;
-            sessionID = parsedCookie.value;
-          } else if (parsedCookie.name === config.cookies.rememberToken) {
-            authCookies.rememberToken = cookie;
+      } catch (error) {
+        log(error);
+        event.locals.errors.add("auth.errors.session-fetch-failed");
+      }
+      if (sessionResponse) {
+        addCookiesFromResponse(sessionResponse);
+
+        let data: unknown = null;
+        try {
+          data = await sessionResponse.json();
+        } catch (error) {
+          log(error);
+          event.locals.errors.add("auth.errors.session-fetch-failed");
+        }
+
+        if (data) {
+          if (validateCSRFTokenResponse(data)) {
+            console.log("adding 1");
+            addCSRFToken(data.csrfToken);
+          } else if (validateAPIErrors(data)) {
+            if (data.csrfToken) {
+              console.log("adding 2");
+              addCSRFToken(data.csrfToken);
+            }
+            addErrorsFromAPI(data.errors);
+          } else {
+            throw new Error("Unexpected data in session response");
           }
         }
-        try {
-          const data = await sessionResponse.json();
-          if (data.errors)
-            addErrorsFromAPI(data.errors);
-          else
-            event.locals.csrfToken = data.csrfToken;
-        } catch {
-          event.locals.errors.add("general.errors.could-not-connect-to-server");
-        }
-      } catch {
-        event.locals.errors.add("general.errors.could-not-connect-to-server");
       }
     }
   }
@@ -72,54 +123,84 @@ export const handle: Handle = async ({ event, resolve }) => {
     let userResponse: Response | null = null;
     try {
       userResponse = await fetch(`${config.apiURL}/users/me`, {
-        headers: { "Cookie": `${config.cookies.session}=${sessionID}` },
+        headers: { Cookie: `${config.cookies.session}=${sessionID}` },
       });
-    } catch {
+    } catch (error) {
+      log(error);
       event.locals.errors.add("general.errors.could-not-connect-to-server");
     }
     if (userResponse) {
-      if (userResponse.ok) {
-        try {
-          event.locals.user = (await userResponse.json()).user;
-        } catch {
-          event.locals.errors.add("general.errors.user-data-fetch-failed");
+      addCookiesFromResponse(userResponse);
+
+      let data: unknown = null;
+      try {
+        data = await userResponse.json();
+      } catch (error) {
+        log(error);
+        event.locals.errors.add("general.errors.user-data-fetch-failed");
+      }
+
+      if (data && validateUserResponse(data)) {
+        event.locals.user = convertAPIUser(data);
+      } else if (validateAPIErrors(data)) {
+        if (data.csrfToken) {
+          console.log("adding 3");
+          addCSRFToken(data.csrfToken);
         }
+
+        // Replace not-logged-in error with user-data-fetch-failed
+        const isNotLoggedInError =
+          (error: APIAlert) => error.source === "auth" && error.id === "not-logged-in";
+
+        if (data.errors.some(isNotLoggedInError)) {
+          data.errors = data.errors.filter((error) => !isNotLoggedInError(error));
+          data.errors.unshift({ source: "general", id: "user-data-fetch-failed" });
+        }
+        addErrorsFromAPI(data.errors);
       } else {
-        try {
-          const data = (await userResponse.json());
-          if (data.errors) {
-            const clearSessionCookie = () => {
-              authCookies.session = serializeCookie(config.cookies.session, "", {
-                httpOnly: true,
-                maxAge: 0,
-                path: config.cookies.options.path,
-                sameSite: config.cookies.options.sameSite,
-                secure: config.cookies.options.secure
-              });
-            };
-            // Replace not-logged-in error with user-data-fetch-failed
-            if (
-              data.errors.some((error: APIAlert) =>
-                error.source === "auth" && error.id === "not-logged-in")
-            ) {
-              clearSessionCookie();
-              data.errors.unshift({ source: "general", id: "user-data-fetch-failed" });
-              data.errors = data.errors.filter(
-                (error: APIAlert) => !(error.source === "auth" || error.id === "not-logged-in")
-              )
-            }
-            addErrorsFromAPI(data.errors);
-            if (data.errors.some((error: APIAlert) => error.source === "auth"))
-              clearSessionCookie();
-          }
-        } catch {
-          event.locals.errors.add("general.errors.user-data-fetch-failed");
+        event.locals.errors.add("general.errors.user-data-fetch-failed");
+      }
+    }
+  } else {
+    let csrfResponse: Response | null = null;
+    try {
+      csrfResponse = await fetch(`${config.apiURL}/auth/csrf-token`);
+    } catch (error) {
+      log(error);
+      event.locals.errors.add("csrf.errors.fetch-failed");
+    }
+    if (csrfResponse) {
+      addCookiesFromResponse(csrfResponse);
+
+      let data: unknown = null;
+      try {
+        data = await csrfResponse.json();
+      } catch (error) {
+        log(error);
+        event.locals.errors.add("csrf.errors.fetch-failed");
+      }
+      if (data && validateCSRFTokenResponse(data)) {
+        console.log("adding 5", data);
+        addCSRFToken(data.csrfToken);
+      } else if (validateAPIErrors(data)) {
+        if (data.csrfToken) {
+          console.log("adding 666");
+          addCSRFToken(data.csrfToken);
         }
+        addErrorsFromAPI(data.errors);
+      } else {
+        event.locals.errors.add("csrf.errors.fetch-failed");
       }
     }
   }
+
   const response = await resolve(event);
-  for (const cookie of Object.values(authCookies))
-    response.headers.append("Set-Cookie", cookie);
+  if (cookies.csrfToken)
+    response.headers.append("Set-Cookie", cookies.csrfToken);
+  if (cookies.rememberToken)
+    response.headers.append("Set-Cookie", cookies.rememberToken);
+  if (cookies.session)
+    response.headers.append("Set-Cookie", cookies.session);
   return response;
 };
+/* eslint-enable require-atomic-updates */

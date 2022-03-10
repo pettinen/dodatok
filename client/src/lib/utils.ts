@@ -1,23 +1,35 @@
-import { get, derived, writable } from "svelte/store";
-import type { Writable } from "svelte/store";
+import { get, writable } from "svelte/store";
+import type { Readable, Writable } from "svelte/store";
+import { locale as localeStore } from "svelte-i18n";
 
-import { dev } from "$app/env";
+import { browser, dev } from "$app/env";
 import { base } from "$app/paths";
-import { session } from "$app/stores";
 
-import { cacheURL } from "$lib/cache";
 import { config } from "$lib/config";
-import { errors, warnings } from "$lib/errors";
-import type { APIAlert } from "$lib/errors";
-import type { JSONObject, JSONValue, User } from "$lib/types";
+import {
+  convertAPIAlert,
+  infoMessages,
+  errors as errorStore,
+  warnings as warningStore,
+} from "$lib/errors";
+import type { Alert } from "$lib/errors";
+import { validateAPIErrors } from "$lib/types";
+import type { JSONObject, UserResponse } from "$lib/types";
 
 
-interface APIResponse {
-  [key: string]: JSONValue;
-  csrfToken?: string;
-  errors?: APIAlert[];
-  warnings?: APIAlert[];
-}
+export const log = (error: unknown): void => {
+  if (dev)
+    console.error(error);
+};
+
+export const unexpected = (error?: unknown): void => {
+  errorStore.add("general.errors.unexpected");
+  log(error);
+};
+
+export const noop = (): void => {
+  // Do nothing
+};
 
 interface APIFetchOptions {
   body?: FormData | string;
@@ -25,23 +37,44 @@ interface APIFetchOptions {
   method: string;
 }
 
-const isAPIResponse = (data: unknown): data is APIResponse => {
-  if (typeof data !== "object" || data === null)
-    return false;
-  if ("csrfToken" in data && typeof data.csrfToken !== "string")
-    return false;
-  if ("errors" in data && !Array.isArray(data.errors))
-    return false;
-  if ("warnings" in data && !Array.isArray(data.warnings))
-    return false;
-  return true;
-};
+interface APIFetchResponseWithData<T> {
+  data: T;
+  errors: Alert[] | null;
+  warnings: Alert[] | null;
+}
 
-export const apiFetch = async (
+interface APIFetchResponseWithoutData {
+  data: null;
+  errors: Alert[];
+  warnings: Alert[] | null;
+}
+
+export interface User extends UserResponse {
+  icon: string;
+}
+
+type APIFetchResponse<T> = APIFetchResponseWithData<T> | APIFetchResponseWithoutData;
+
+export const apiFetch = async <T>(
   url: string,
+  validate: (data: unknown) => data is T,
   method = "GET",
   body: FormData | JSONObject | null = null,
-): Promise<APIResponse> => {
+): Promise<APIFetchResponse<T>> => {
+  const error = (errorID: string): APIFetchResponse<T> => {
+    errorStore.add(errorID);
+    return {
+      data: null,
+      errors: ["validation.errors.invalid-data"],
+      warnings: null,
+    };
+  };
+
+  if (!url.startsWith("/")) {
+    log(new Error("invalid API fetch URL"));
+    return error("general.errors.unexpected");
+  }
+
   const options: APIFetchOptions = { headers: {}, method };
   if (body) {
     if (body instanceof FormData) {
@@ -60,40 +93,39 @@ export const apiFetch = async (
   let response: Response;
   try {
     response = await fetch(`${base}/api${url}`, options);
-  } catch (error: unknown) {
-    errors.add("general.errors.could-not-connect-to-server");
-    throw error instanceof Error ? error : new Error(String(error));
+  } catch (error) {
+    log(error);
+    return error("general.errors.could-not-connect-to-server");
   }
 
-  let data: APIResponse;
+  let data: unknown;
   try {
-    const _data: unknown = await response.json();
-    if (isAPIResponse(_data))
-      data = _data;
-    else
-      throw new Error("Unexpected API response data");
-  } catch (error: unknown) {
-    errors.add("validation.errors.invalid-data");
-    throw error instanceof Error ? error : new Error(String(error));
+    data = await response.json();
+  } catch (error) {
+    log(error);
+    return error("validation.errors.invalid-data");
   }
-  if (data.csrfToken)
-    localStorage.setItem(config.csrfTokenField, data.csrfToken);
-  if (data.errors)
-    errors.addFromAPI(data.errors);
-  if (data.warnings)
-    warnings.addFromAPI(data.warnings);
-  return data;
-};
 
-export const catchError = (error: unknown): void => {
-  errors.add("general.errors.unexpected");
-  if (dev)
-    console.error(error);
+  if (validate(data)) {
+    return { data, errors: null, warnings: null };
+  } else if (validateAPIErrors(data)) {
+    const errors = data.errors.map(convertAPIAlert("error"));
+    errorStore.add(...errors);
+    const warnings = data.warnings ? data.warnings.map(convertAPIAlert("warning")) : null;
+    if (warnings)
+      warningStore.add(...warnings);
+    if (data.csrfToken)
+      localStorage.setItem(config.csrfTokenField, data.csrfToken);
+    return { data: null, errors, warnings };
+  }
+
+  return error("validation.errors.invalid-data");
 };
 
 interface ModalStore extends Readable<string[]> {
   pop: () => string | null;
   push: (name: string) => void;
+  remove: (name: string) => void;
 }
 
 const createModalStore = (): ModalStore => {
@@ -104,9 +136,8 @@ const createModalStore = (): ModalStore => {
       const current = get(modalStore);
       if (current.length === 0)
         return null;
-      const rv = current[0];
       modalStore.update((store) => store.slice(1));
-      return rv;
+      return current[0];
     },
     push: (name: string): void => {
       modalStore.update((store) => [name, ...store.filter((existing) => existing !== name)]);
@@ -115,27 +146,63 @@ const createModalStore = (): ModalStore => {
       modalStore.update((store) => store.filter((existing) => existing !== name));
     },
     subscribe: modalStore.subscribe,
-  }
-}
-
-export const modals = createModalStore();
-
-export const userIconURL = (iconID: string): string => `${config.baseURLs.userIcon}/${iconID}.webp`;
-
-type APIUser = User;
-
-export const convertAPIUser = (apiUser: APIUser | null): User | null => {
-  if (!apiUser)
-    return null;
-  return {
-    ...apiUser,
-    icon: apiUser.icon && userIconURL(apiUser.icon),
   };
 };
 
-export const userIcon = derived([cacheURL, session], ([$cacheURL, $session]) => {
-  const defaultIcon = $cacheURL(config.defaultUserIcon);
-  if ($session.user?.icon)
-    return $cacheURL($session.user.icon) ?? defaultIcon;
-  return defaultIcon;
+export const modals = createModalStore();
+
+export const user: Writable<User | null> = writable(null);
+
+export const userIconURL = (iconID: string): string => `${config.baseURLs.userIcon}/${iconID}.webp`;
+
+export const convertAPIUser = (apiUser: UserResponse): User => ({
+  ...apiUser,
+  icon: apiUser.icon ? userIconURL(apiUser.icon) : config.defaultUserIcon,
 });
+
+
+type UserUpdate = Partial<UserResponse & { passwordUpdated: boolean }>;
+
+export const updateUser = (data: UserUpdate): void => {
+  const {
+    icon,
+    locale,
+    passwordChangeReason,
+    passwordUpdated,
+    sudoUntil,
+    totpEnabled,
+    username,
+  } = data;
+
+  if (icon) {
+    user.update((oldUser) => oldUser && { ...oldUser, icon: userIconURL(icon) });
+    infoMessages.showTimed("account.icon-updated");
+  } else if (icon === null) {
+    user.update((oldUser) => oldUser && { ...oldUser, icon: config.defaultUserIcon });
+    infoMessages.showTimed("account.icon-removed");
+  }
+
+  if (locale) {
+    user.update((oldUser) => oldUser && { ...oldUser, locale });
+    void localeStore.set(locale);
+  }
+
+  if (passwordUpdated)
+    infoMessages.showTimed("account.password-changed");
+
+  if (passwordChangeReason || passwordChangeReason === null)
+    user.update((oldUser) => oldUser && { ...oldUser, passwordChangeReason });
+
+  if (sudoUntil)
+    user.update((oldUser) => oldUser && { ...oldUser, sudoUntil });
+
+  if (typeof totpEnabled === "boolean") {
+    user.update((oldUser) => oldUser && { ...oldUser, totpEnabled });
+    infoMessages.showTimed(totpEnabled ? "account.totp-enabled" : "account.totp-disabled");
+  }
+
+  if (username) {
+    user.update((oldUser) => oldUser && { ...oldUser, username });
+    infoMessages.showTimed("account.username-changed");
+  }
+};

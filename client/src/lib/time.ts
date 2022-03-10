@@ -1,6 +1,6 @@
 import { derived, readable } from "svelte/store";
 
-import { session } from "$app/stores";
+import { user } from "$lib/utils";
 
 
 export const time = readable(new Date(), (set) => {
@@ -13,8 +13,8 @@ export const time = readable(new Date(), (set) => {
   };
 });
 
-export const sudo = derived([session, time], ([$session, $time]) => {
-  if (!$session.user.sudoUntil)
+export const sudo = derived([user, time], ([$user, $time]) => {
+  if (!$user?.sudoUntil)
     return false;
-  return $time < new Date($session.user.sudoUntil);
+  return $time < new Date($user.sudoUntil);
 });

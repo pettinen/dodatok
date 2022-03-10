@@ -1,15 +1,6 @@
-<svelte:window on:load={onWindowLoad} on:keydown={onWindowKeydown} />
+<svelte:window on:keydown={onWindowKeydown} />
 
-{#if $isLoading}
-  <div class=loading transition:fade>
-    <div class=spinner>
-      <div></div>
-      <div></div>
-      <div></div>
-      <div></div>
-    </div>
-  </div>
-{:else}
+{#if !$isLoading}
   <Navbar />
 
   <slot />
@@ -71,11 +62,17 @@
   import type { Load } from "@sveltejs/kit";
 
   import { browser } from "$app/env";
-  import { assets } from "$app/paths";
-  import { updated } from "$app/stores";
 
   import { config } from "$lib/config";
-  import { apiFetch, catchError } from "$lib/utils";
+  import {
+    errors,
+    formatError,
+    formatInfoMessage,
+    formatWarning,
+    infoMessages,
+    warnings,
+  } from "$lib/errors";
+  import { apiFetch, modals, unexpected, user } from "$lib/utils";
 
   import "normalize.css";
   import "@fontsource/fira-sans/latin.css";
@@ -85,106 +82,48 @@
 
   export const load: Load = async ({ session }) => {
     for (const localeID of Object.keys(config.locales))
-      register(localeID, () => import(`../translations/${localeID}.json`));
+      register(localeID, async () => import(`../translations/${localeID}.json`));
 
-    const i18nInit = init({
+    await init({
       fallbackLocale: config.defaultLocale,
       initialLocale: session.user?.locale
         ?? (browser ? localStorage.getItem("locale") : null)
         ?? getLocaleFromNavigator(),
     });
-    if (i18nInit instanceof Promise)
-      i18nInit.catch(catchError);
 
-    if (browser) {
-      if (session.csrfToken) {
-        localStorage.setItem(config.csrfTokenField, session.csrfToken);
-      } else if (!session.user) {
-        try {
-          await apiFetch("/csrf-token");
-        } catch (error) {
-          catchError(error);
-          session.errors.add("auth.errors.unauthenticated-csrf-token-fetch-failed");
-        }
-      }
-    }
+    errors.add(...session.errors);
 
     return {};
   };
 </script>
 
 <script lang=ts>
-  import { io } from "socket.io-client";
-  import type { Socket } from "socket.io-client";
-  import { onMount } from "svelte";
-  import { fade } from "svelte/transition";
-
-  import { session } from "$app/stores";
+  import { goto } from "$app/navigation";
+  import { page, session, updated } from "$app/stores";
 
   import { cache } from "$lib/cache";
-  import {
-    errors,
-    formatError,
-    formatInfoMessage,
-    formatWarning,
-    infoMessages,
-    warnings,
-  } from "$lib/errors";
-  import type { JSONObject } from "$lib/types";
-  import { modals } from "$lib/utils";
+  import { accountSocket } from "$lib/sockets";
+  import { validateCSRFTokenResponse } from "$lib/types";
 
   import Message from "$lib/components/Message.svelte";
   import Navbar from "$lib/components/Navbar.svelte";
 
 
-  for (const url of [config.defaultUserIcon])
-    cache.load(url).catch(catchError);
+  user.set($session.user);
 
+  if (browser) {
+    if ($session.csrfToken)
+      localStorage.setItem(config.csrfTokenField, $session.csrfToken);
 
-  let socket: Socket | null = null;
-  let socketStatus = "not-created";
-
-  const createSocket = async (): Promise<void> => {
-    if (socketStatus !== "not-created")
-      return;
-
-    socketStatus = "creating";
-    let data: JSONObject;
-    try {
-      data = await apiFetch("/account/websocket-token");
-    } catch (error) {
-      catchError(error);
-      socketStatus = "failed";
-      return;
-    }
-
-    if (data.errors) {
-      socketStatus = "failed";
-      return;
-    }
-
-    socket = io(config.socketio.endpoint, { path: config.socketio.path });
-    socket.emit("authenticate", data.token);
-    socketStatus = "created";
-  }
-
-  const destroySocket = (): void => {
-    socketStatus = "not-created";
-    if (!socket)
-      return;
-    console.log("disconnected");
-    socket.disconnect();
-    socket = null;
+    cache.load(config.defaultUserIcon);
+    if ($user)
+      cache.load($user.icon);
   }
 
   const clearMessages = (): void => {
     errors.clear();
     warnings.clear();
     infoMessages.clear();
-  };
-
-  const onWindowLoad = (): void => {
-    document.body.classList.remove("preload");
   };
 
   const onWindowKeydown = (event: KeyboardEvent): void => {
@@ -195,71 +134,27 @@
     }
   };
 
-  $: browser && $session.user && void createSocket().catch(catchError);
-  $: browser && !$session.user && destroySocket();
-  $: $session.user?.icon && cache.load($session.user.icon).catch(catchError);
-  $: $session.user?.icon && cache.load($session.user.icon).catch(catchError);
+  /* eslint-disable @typescript-eslint/indent */
+  $: browser && $user && accountSocket.initialize().catch(unexpected);
+  $: if (browser && !$user) {
+       accountSocket.destroy();
+       if (config.pages.authRequired.includes($page.url.pathname))
+         goto(config.pages.index).catch(unexpected);
+     }
   $: browser && $locale && localStorage.setItem("locale", $locale);
+  $: $user?.icon && cache.load($user.icon);
   $: $updated && !$isLoading && infoMessages.show("general.update-available");
-  $: !$isLoading && ($errors = [...$session.errors]);
-  $: gotErrorMessages = $errors.map($formatError).filter((msg) => msg).length > 0;
-  $: gotWarningMessages = $warnings.map($formatWarning).filter((msg) => msg).length > 0;
-  $: gotInfoMessages = $infoMessages.map($formatInfoMessage).filter((msg) => msg).length > 0;
+  $: gotErrorMessages =
+       !$isLoading && $errors.map($formatError).filter((msg) => msg).length > 0;
+  $: gotWarningMessages =
+       !$isLoading && $warnings.map($formatWarning).filter((msg) => msg).length > 0;
+  $: gotInfoMessages =
+       !$isLoading && $infoMessages.map($formatInfoMessage).filter((msg) => msg).length > 0;
+  /* eslint-enable @typescript-eslint/indent */
 </script>
 
 <style lang=scss>
   @use "globals.scss" as g;
-
-  .loading {
-    align-items: center;
-    background: g.$background-color;
-    display: flex;
-    height: 100vh;
-    justify-content: center;
-    position: absolute;
-    width: 100vw;
-
-    .spinner {
-      $spinner-base-size: max(1.5vw, 1.5vh);
-
-      display: inline-block;
-      position: relative;
-      width: calc(10 * $spinner-base-size);
-      height: calc(10 * $spinner-base-size);
-
-      div {
-        @keyframes spinner {
-          0% {
-            transform: rotate(0deg);
-          }
-          100% {
-            transform: rotate(360deg);
-          }
-        }
-
-        box-sizing: border-box;
-        display: block;
-        position: absolute;
-        width: calc(8 * $spinner-base-size);
-        height: calc(8 * $spinner-base-size);
-        margin: $spinner-base-size;
-        border: $spinner-base-size solid g.$white;
-        border-radius: 50%;
-        animation: spinner 1.2s cubic-bezier(0.5, 0, 0.5, 1) infinite;
-        border-color: g.$white transparent transparent transparent;
-
-        &:nth-child(1) {
-          animation-delay: -0.45s;
-        }
-        &:nth-child(2) {
-          animation-delay: -0.3s;
-        }
-        &:nth-child(3) {
-          animation-delay: -0.15s;
-        }
-      }
-    }
-  }
 
   .messages {
     position: fixed;

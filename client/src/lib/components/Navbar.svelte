@@ -1,10 +1,10 @@
 <svelte:window on:close-navbar={closeAccount} />
 
-<nav class:logged-in={loggedIn}>
-  {#if $page.url.pathname !== `${base}/`}
+<nav class:logged-in={$user}>
+  {#if $page.url.pathname !== config.pages.index}
     <a
       class="button home icon"
-      href={`${base}/`}
+      href={config.pages.index}
       id=navbar-home-button
       title={$_("menu.home")}
       in:reveal|local={{ direction: "left", easing: cubicOut }}
@@ -32,13 +32,13 @@
         </button>
       {/if}
       <div class=account-modal-inner>
-        {#if loggedIn}
+        {#if $user}
           <div class=account-info>
             <div class=logged-in-as>
-              {#if $userIcon}
+              {#if userIconState === "loaded"}
                 <img
                   class=user-icon
-                  src={$userIcon}
+                  src={$cacheURL($user.icon)}
                   alt={$_("account.user-icon")}
                 >
               {/if}
@@ -128,14 +128,14 @@
     <button
       bind:this={multiButton}
       class="account-multi-button button icon"
-      class:login={accountOpen && !loggedIn}
-      class:logout={accountOpen && loggedIn}
+      class:login={accountOpen && !$user}
+      class:logout={accountOpen && $user}
       class:open={!accountOpen}
       disabled={loggingIn || loggingOut}
       title={multiButtonTitle}
       on:click={onMultiButtonClick}
     >
-      {#if loadingUserIcon || loggingIn || loggingOut}
+      {#if loggingIn || loggingOut || (userIconState === "loading" && userIconChanged)}
         <span
           class="account-multi-icon spinning"
           in:reveal|local={{ direction: "left" }}
@@ -145,7 +145,7 @@
             autorenew
           </span>
         </span>
-      {:else if loggedIn && accountOpen}
+      {:else if $user && accountOpen}
         <span
           class=account-multi-icon
           in:reveal|local={{ direction: "left" }}
@@ -153,16 +153,16 @@
         >
           <span class="account-multi-icon-inner material-icons">logout</span>
         </span>
-      {:else if loggedIn}
+      {:else if $user}
         <span
           class=account-multi-icon
           in:reveal|local={{ direction: "left" }}
           out:reveal|local={{ direction: "right" }}
         >
-          {#if $userIcon}
+          {#if userIconState === "loaded"}
           <img
             class="account-multi-icon-inner user-icon"
-            src={$userIcon}
+            src={$cacheURL($user.icon)}
             alt={$_("account.user-icon")}
           >
           {:else}
@@ -215,28 +215,23 @@
 
   import { browser } from "$app/env";
   import { goto } from "$app/navigation";
-  import { assets, base } from "$app/paths";
-  import { page, navigating, session } from "$app/stores";
+  import { base } from "$app/paths";
+  import { page, navigating } from "$app/stores";
 
   import { cache, cacheURL } from "$lib/cache";
   import { config } from "$lib/config";
-  import { errors, gotErrors, infoMessages } from "$lib/errors";
+  import { errors, gotErrors, infoMessages, warnings } from "$lib/errors";
+  import { accountSocket } from "$lib/sockets";
   import { reveal } from "$lib/transitions";
+  import { validateCSRFTokenResponse, validateLoginResponse } from "$lib/types";
   import type { JSONObject } from "$lib/types";
-  import { apiFetch, catchError, convertAPIUser, modals, userIcon } from "$lib/utils";
+  import { apiFetch, convertAPIUser, modals, unexpected, user, userIconURL } from "$lib/utils";
   import { validators } from "$lib/validation";
 
   import Checkbox from "$lib/components/Checkbox.svelte";
   import IconTextInput from "$lib/components/IconTextInput.svelte";
   import IconPasswordInput from "$lib/components/IconPasswordInput.svelte";
 
-
-  interface LoginBody {
-    password: string;
-    remember: boolean;
-    totp?: string;
-    username: string;
-  }
 
   // from login form: buttons: 2 * 3rem + inputs 2 * 20rem + gaps 3 * 1rem
   const NARROW_BREAKPOINT = "49rem";
@@ -263,6 +258,9 @@
   let password = "";
   let totp = "";
   let remember = (browser && JSON.parse(localStorage.getItem("rememberMe") ?? "false")) || false;
+
+  const initialUserIcon = $user?.icon;
+  let userIconChanged = false;
 
   let accountModal: HTMLDivElement;
   let multiButton: HTMLButtonElement;
@@ -302,7 +300,6 @@
   const login = async (): Promise<void> => {
     if (loggingIn)
       return;
-    loggingIn = true;
 
     username = username.trim();
     totp = totp.trim();
@@ -311,24 +308,20 @@
       ...validators.password(password, "login-password", false),
       ...validators.totp(totp, true),
     ];
-    if ($errors.length > 0) {
-      loggingIn = false;
+    if ($errors.length > 0)
       return;
-    }
 
-    const body: LoginBody = { username, password, remember };
+    loggingIn = true;
+    errors.clear();
+    warnings.clear();
+
+    const body: JSONObject = { username, password, remember };
     if (totp)
       body.totp = totp;
 
-    let data: JSONObject;
-    try {
-      data = await apiFetch("/login", "POST", body);
-    } catch {
-      loggingIn = false;
-      return;
-    }
+    const { data } = await apiFetch("/auth/login", validateLoginResponse, "POST", body);
 
-    if (data.errors) {
+    if (!data) {
       loggingIn = false;
       if ($gotErrors(...errorSources.password, /^csrf\.errors\./u)) {
         await tick();
@@ -343,20 +336,20 @@
       return;
     }
 
-    errors.clear();
+    if (data.user.icon)
+      cache.load(userIconURL(data.user.icon));
+    closeAccount();
     localStorage.setItem(config.csrfTokenField, data.csrfToken);
 
     if (config.pages.noAuthRequired.includes($page.url.pathname))
-      goto("/").catch(catchError);
-    if (data.icon)
-      cache.load(data.icon).catch(catchError);
-    closeAccount();
+      goto(config.pages.index).catch(unexpected);
+
     username = "";
     password = "";
     totp = "";
 
     await accountOutroFinished();
-    $session.user = convertAPIUser(data.user);
+    $user = convertAPIUser(data.user);
     loggingIn = false;
   };
 
@@ -365,25 +358,25 @@
       return;
     loggingOut = true;
 
-    let data: JSONObject;
-    try {
-      data = await apiFetch("/logout", "POST");
-      if (data.errors)
-        throw new Error("Got errors while logging out");
-    } catch {
+    const { data } = await apiFetch("/auth/logout", validateCSRFTokenResponse, "POST");
+
+    if (!data) {
       loggingOut = false;
       return;
     }
 
+    closeAccount();
     errors.clear();
+    warnings.clear();
     infoMessages.clear();
     localStorage.setItem(config.csrfTokenField, data.csrfToken);
+    accountSocket.destroy();
 
     if (config.pages.authRequired.includes($page.url.pathname))
-      goto("/").catch(catchError);
-    closeAccount();
+      goto(config.pages.index).catch(unexpected);
+
     await accountOutroFinished();
-    $session.user = null;
+    $user = null;
     loggingOut = false;
   };
 
@@ -399,14 +392,14 @@
     if (!accountOpen) {
       accountOpen = true;
       modals.push("navbar");
-      if (!loggedIn) {
+      if (!$user) {
         await tick();
         usernameInput?.focus();
       }
-    } else if (loggedIn) {
-      logout().catch(catchError);
+    } else if ($user) {
+      logout().catch(unexpected);
     } else {
-      login().catch(catchError);
+      login().catch(unexpected);
     }
   };
 
@@ -443,18 +436,19 @@
 
   const submitLogin = (event: KeyboardEvent): void => {
     if (event.key === "Enter")
-      login().catch(catchError);
+      login().catch(unexpected);
   };
 
   /* eslint-disable @typescript-eslint/indent */
-  $: loadingUserIcon = $session.user?.icon && $cache.get($session.user.icon)?.state === "loading";
-  $: loggedIn = Boolean($session.user);
-  $: loggedInAs = $session.user?.username && $_(
+  $: userIconState = ($user && $cache.get($user.icon)?.state) || "not-loaded";
+  $: if ($user?.icon !== initialUserIcon)
+       userIconChanged = true;
+  $: loggedInAs = $user?.username && $_(
        "menu.logged-in-as",
-       { values: { username: `<strong>${htmlEscape($session.user.username)}</strong>` } },
+       { values: { username: `<strong>${htmlEscape($user.username)}</strong>` } },
      );
   $:
-    if (!loggedIn)
+    if (!$user)
       multiButtonTitle = $_("login.log-in");
     else if (accountOpen)
       multiButtonTitle = $_("menu.log-out");
@@ -637,28 +631,28 @@
         height: calc(3 * g.$navbar-height + 0.6 * g.$icon-button-size);
         transition: height 400ms cubic-bezier(0.33, 1, 0.68, 1);
       }
+    }
 
-      button {
-        height: 100%;
-        min-height: g.$navbar-height;
-        max-height: calc(2 * g.$icon-button-size);
-        transition: background-color 400ms;
-        z-index: 3;
+    .account-multi-button {
+      height: 100%;
+      min-height: g.$navbar-height;
+      max-height: calc(2 * g.$icon-button-size);
+      transition: background-color 400ms;
+      z-index: 3;
+    }
 
-        .account-multi-icon {
-          overflow: hidden;
-          padding: 0.1rem;
-          position: absolute;
-          transform: rotate(-45deg);
+    .account-multi-icon {
+      overflow: hidden;
+      padding: 0.1rem;
+      position: absolute;
+      transform: rotate(-45deg);
+    }
 
-          .account-multi-icon-inner {
-            font-size: g.$icon-button-font-size;
-            height: g.$icon-button-font-size;
-            transform: rotate(45deg);
-            width: g.$icon-button-font-size;
-          }
-        }
-      }
+    .account-multi-icon-inner {
+      font-size: g.$icon-button-font-size;
+      height: g.$icon-button-font-size;
+      transform: rotate(45deg);
+      width: g.$icon-button-font-size;
     }
 
     .logged-in-as {

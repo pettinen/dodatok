@@ -2,9 +2,9 @@
   <label
     class="button text"
     class:disabled
-    on:dragenter={() => { dragover = true; }}
-    on:dragleave={() => { dragover = false; }}
-    on:dragover|preventDefault={() => { dragover = true; }}
+    on:dragenter={showDragover}
+    on:dragleave={hideDragover}
+    on:dragover|preventDefault={noop}
     on:drop|preventDefault={onDrop}
   >
     <input class=hidden bind:files={inputFiles} {...attrs} type=file>
@@ -25,6 +25,8 @@
 <script lang=ts>
   import { createEventDispatcher } from "svelte";
   import { _ } from "svelte-i18n";
+
+  import { noop } from "$lib/utils";
 
 
   export let accept: string[] = [];
@@ -52,6 +54,14 @@
   const clear = (): void => {
     files = null;
     dispatch("clear");
+  };
+
+  const showDragover = (): void => {
+    dragover = true;
+  };
+
+  const hideDragover = (): void => {
+    dragover = false;
   };
 
   const onDrop = (event: DragEvent): void => {
