@@ -3,17 +3,19 @@ origin = "http://kotori.lab:55555"
 
 [cookie]
 path = "/"
+same_site = "Lax"
 secure = false
 
 [csrf]
 token_bits = 256
 cookie = "csrfToken"
+cookie_lifetime = 31_104_000
 header = "X-CSRF-Token"
 response_field = "csrfToken"
 
 [db]
-dbname = "simple_backend"
-application_name = "simple-backend"
+dbname = "dodatok"
+application_name = "dodatok"
 
 [redis]
 url = "unix:///run/redis/redis.sock?db=0"
@@ -21,9 +23,10 @@ key_separator = "|"
 
 [remember_token]
 cookie = "rememberToken"
+cookie_lifetime = 31_104_000
 id_bits = 256
 secret_bits = 256
-separator = ":"
+separator = "."
 
 [security]
 aes_key = "87428fc522803d31065e7bce3cf03fe475096631e5e07bbd7a0fde60c4cf25c7"
@@ -38,8 +41,17 @@ sudo_lifetime = 86_400
 [totp]
 algorithm = "SHA-1"
 digits = 6
+key_bits = 320
 time_step = 30
 time_window = 1
+
+[user]
+id_bits = 256
+icon_id_bits = 256
+username_min_length = 1
+username_max_length = 32
+password_min_length = 8
+password_max_length = 1000
 
 [websocket]
 channel_capacity = 32

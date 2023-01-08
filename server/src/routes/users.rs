@@ -1,6 +1,6 @@
 use deadpool_postgres::Pool;
 use poem::{
-    get, handler,
+    handler,
     web::{Data, Path},
     EndpointExt, Response, Result, Route,
 };
@@ -10,7 +10,7 @@ use crate::{
     db::{Locale, PasswordChangeReason, Permission},
     error::{Forbidden, InternalError, NotFound},
     middleware::{AuthRequired, AuthRequiredOptions, CurrentUser},
-    util::json_response,
+    util::{get, json_response},
 };
 
 fn current_user_response(current_user: &CurrentUser) -> Result<Response> {
@@ -72,18 +72,18 @@ pub fn routes() -> Route {
     Route::new()
         .at(
             "/:user_id",
-            get(get_user.with(AuthRequired::new(
+            get!(get_user).with(AuthRequired::new(
                 AuthRequiredOptions::WITH_USERNAME
                     | AuthRequiredOptions::WITH_TOTP_STATUS
                     | AuthRequiredOptions::WITH_ICON
                     | AuthRequiredOptions::WITH_LOCALE
                     | AuthRequiredOptions::WITH_PERMISSIONS
                     | AuthRequiredOptions::WITH_SUDO_UNTIL,
-            )))
+            ))
         )
         .at(
             "/me",
-            get(get_me.with(AuthRequired::new(
+            get!(get_me).with(AuthRequired::new(
                 AuthRequiredOptions::WITH_USERNAME
                     | AuthRequiredOptions::WITH_TOTP_STATUS
                     | AuthRequiredOptions::WITH_ICON
@@ -91,6 +91,6 @@ pub fn routes() -> Route {
                     | AuthRequiredOptions::WITH_PERMISSIONS
                     | AuthRequiredOptions::WITH_SUDO_UNTIL
                     | AuthRequiredOptions::ALLOW_PASSWORD_CHANGE_REASON,
-            )))
+            ))
         )
 }

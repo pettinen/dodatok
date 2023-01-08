@@ -1,7 +1,7 @@
 use std::fmt;
 
 use poem::{
-    error::{Error as PoemError, ResponseError},
+    error::{Error as PoemError, ParseJsonError, ResponseError},
     http::{
         header::{self, HeaderValue},
         StatusCode,
@@ -14,26 +14,34 @@ use serde_json::{json, Value as JsonValue};
 use tracing::error;
 
 use crate::{util::{clear_cookie, set_cookie}, CONFIG};
-use macros::error_enum;
+use macros::alert_enum;
 
 pub trait Error: Serialize {
     fn to_tuple(&self) -> (String, String, Option<String>);
 }
 
-#[error_enum]
+#[alert_enum]
 pub enum AuthError {
     AccountDisabled,
     AlreadyLoggedIn,
     InvalidCredentials,
+    InvalidRememberToken,
     InvalidTotp,
+    MissingRememberToken,
     MissingTotp,
     NotLoggedIn,
     PasswordChangeRequired,
+    RememberTokenSecretMismatch,
     SessionExpired,
     TotpReuse,
 }
 
-#[error_enum]
+#[alert_enum]
+pub enum AuthWarning {
+    UnusedTotp,
+}
+
+#[alert_enum]
 pub enum CsrfError {
     InvalidHeader,
     MissingCookie,
@@ -41,12 +49,12 @@ pub enum CsrfError {
     Mismatch,
 }
 
-#[error_enum]
+#[alert_enum]
 pub enum GeneralError {
     InvalidData(String),
 }
 
-#[error_enum]
+#[alert_enum]
 pub enum WebSocketError {
     AlreadyInRoom,
     InvalidMessageType,
@@ -115,7 +123,7 @@ impl<E: Error> ResponseError for BadRequest<E> {
                 CONFIG.csrf.response_field.clone(),
                 csrf_token.to_owned().into(),
             );
-            res = set_cookie(res, &CONFIG.csrf.cookie, &csrf_token);
+            res = set_cookie(res, &CONFIG.csrf.cookie, &csrf_token, Some(CONFIG.csrf.cookie_lifetime));
         }
         res.body(Body::from_json(body).unwrap())
     }
@@ -183,18 +191,22 @@ pub async fn error_handler(err: PoemError) -> Response {
         Err(err) => return InternalError::new(err).as_response(),
     };
 
-    let status_code_name = match parts.status.canonical_reason() {
-        Some(reason) => slugify(reason),
-        None => {
-            return InternalError::new(format!("unexpected status code {}", parts.status))
-                .as_response()
+    let error_id = if err.is::<ParseJsonError>() {
+        "invalid-data".to_owned()
+    } else {
+        match parts.status.canonical_reason() {
+            Some(reason) => slugify(reason),
+            None => {
+                return InternalError::new(format!("unexpected status code {}", parts.status))
+                    .as_response()
+            }
         }
     };
 
-    let (body, details) = if slugify(&original_body) == status_code_name {
-        (status_code_name, None)
+    let (error_id, details) = if slugify(&original_body) == error_id {
+        (error_id, None)
     } else {
-        (status_code_name, Some(original_body))
+        (error_id, Some(original_body))
     };
     parts.headers.insert(
         header::CONTENT_TYPE,
@@ -202,11 +214,11 @@ pub async fn error_handler(err: PoemError) -> Response {
     );
     Response::from_parts(
         parts,
-        Body::from_json(single_error("general", &body, details)).unwrap(),
+        Body::from_json(single_error("general", &error_id, details)).unwrap(),
     )
 }
 
-fn api_error(source: &str, id: &str, details: Option<String>) -> JsonValue {
+fn api_alert(source: &str, id: &str, details: Option<String>) -> JsonValue {
     let mut error = json!({ "source": source, "id": id });
     match details {
         Some(details) => {
@@ -221,7 +233,7 @@ fn api_error(source: &str, id: &str, details: Option<String>) -> JsonValue {
 }
 
 fn single_error(source: &str, id: &str, details: Option<String>) -> JsonValue {
-    json!({ "errors": [api_error(source, id, details)] })
+    json!({ "errors": [api_alert(source, id, details)] })
 }
 
 fn slugify(value: &str) -> String {

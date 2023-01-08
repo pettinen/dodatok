@@ -4,36 +4,38 @@ use proc_macro2::{Ident, Span, TokenStream as ProcMacro2TokenStream};
 use quote::{quote, ToTokens};
 use syn::{
     parse::{Parse, ParseBuffer},
-    parse_macro_input, Attribute, ItemEnum, LitStr, Variant,
+    parse_macro_input,
+    token::Eq,
+    Attribute, Expr, Fields, ItemEnum, LitStr, Variant,
 };
 
 #[proc_macro_attribute]
-pub fn error_enum(_meta: CompilerTokenStream, input: CompilerTokenStream) -> CompilerTokenStream {
-    parse_macro_input!(input as ErrorEnum)
+pub fn alert_enum(_meta: CompilerTokenStream, input: CompilerTokenStream) -> CompilerTokenStream {
+    parse_macro_input!(input as AlertEnum)
         .to_token_stream()
         .into()
 }
 
-struct ErrorEnum {
+struct AlertEnum {
     enum_: ItemEnum,
-    variants: Vec<ErrorEnumVariant>,
+    variants: Vec<AlertEnumVariant>,
 }
 
-impl Parse for ErrorEnum {
+impl Parse for AlertEnum {
     fn parse(input: &ParseBuffer) -> syn::Result<Self> {
         let enum_ = input.parse::<ItemEnum>()?;
         let variants = enum_
             .variants
             .clone()
             .into_iter()
-            .map(|variant| ErrorEnumVariant { variant })
+            .map(|variant| AlertEnumVariant { variant })
             .collect();
 
         Ok(Self { enum_, variants })
     }
 }
 
-impl ToTokens for ErrorEnum {
+impl ToTokens for AlertEnum {
     fn to_tokens(&self, tokens: &mut ProcMacro2TokenStream) {
         let attrs = &self.enum_.attrs;
         let vis = &self.enum_.vis;
@@ -44,9 +46,13 @@ impl ToTokens for ErrorEnum {
             .map(|variant| variant.id_details_match_line()).collect();
         let length_details_match_lines: Vec<_> = self.variants.iter()
             .map(|variant| variant.length_details_match_line()).collect();
-        let source = match ident.to_string().strip_suffix("Error") {
+        let ident_string = ident.to_string();
+        let source = match ident_string.strip_suffix("Error") {
             Some(source) => source.to_lowercase(),
-            None => panic!("error_enum name must end with 'Error'"),
+            None => match ident_string.strip_suffix("Warning") {
+                Some(source) => source.to_lowercase(),
+                None => panic!("alert_enum name must end with 'Error' or 'Warning'"),
+            },
         };
 
         tokens.extend(quote! {
@@ -85,11 +91,11 @@ impl ToTokens for ErrorEnum {
     }
 }
 
-struct ErrorEnumVariant {
+struct AlertEnumVariant {
     variant: Variant,
 }
 
-impl ErrorEnumVariant {
+impl AlertEnumVariant {
     fn id_details_match_line(&self) -> ProcMacro2TokenStream {
         let ident = &self.variant.ident;
         let (fields, details) = if self.variant.fields.is_empty() {
@@ -113,7 +119,7 @@ impl ErrorEnumVariant {
     }
 }
 
-impl ToTokens for ErrorEnumVariant {
+impl ToTokens for AlertEnumVariant {
     fn to_tokens(&self, tokens: &mut ProcMacro2TokenStream) {
         let attrs = &self.variant.attrs;
         let ident = &self.variant.ident;
@@ -153,7 +159,7 @@ impl Parse for SqlEnum {
             .variants
             .clone()
             .into_iter()
-            .map(|variant| SqlEnumVariant { variant })
+            .map(SqlEnumVariant::new)
             .collect();
 
         Ok(Self { enum_, variants })
@@ -168,13 +174,20 @@ impl ToTokens for SqlEnum {
         let generics = &self.enum_.generics;
         let snake_case_name = &self.enum_.ident.to_string().to_case(Case::Snake);
         let variants = &self.variants;
+        let variant_names = variants.into_iter().map(|variant| &variant.rename);
         tokens.extend(quote! {
-            #[derive(FromSql, Serialize)]
+            #[derive(Debug, FromSql, ToSql, Serialize)]
             #[postgres(name = #snake_case_name)]
             #[serde(rename_all = "snake_case")]
             #(#attrs)*
             #vis enum #ident #generics {
                 #(#variants),*
+            }
+
+            impl #ident {
+                pub fn variants() -> Vec<String> {
+                    vec![#(#variant_names),*].into_iter().map(|name| name.to_owned()).collect()
+                }
             }
         })
     }
@@ -182,41 +195,51 @@ impl ToTokens for SqlEnum {
 
 #[derive(Debug)]
 struct SqlEnumVariant {
-    variant: Variant,
+    attrs: Vec<Attribute>,
+    discriminant: Option<(Eq, Expr)>,
+    fields: Fields,
+    ident: Ident,
+    rename: String,
 }
 
-impl ToTokens for SqlEnumVariant {
-    fn to_tokens(&self, tokens: &mut ProcMacro2TokenStream) {
-        let attrs = &self.variant.attrs;
-        let ident = &self.variant.ident;
-        let fields = &self.variant.fields;
-
+impl SqlEnumVariant {
+    fn new(variant: Variant) -> Self {
         let name_ident = Ident::new("name", Span::call_site());
-        let (name_attrs, other_attrs): (Vec<&Attribute>, Vec<&Attribute>) = attrs
+        let (name_attrs, other_attrs): (Vec<&Attribute>, Vec<&Attribute>) = variant
+            .attrs
             .iter()
             .partition(|attr| attr.path.is_ident(&name_ident));
         if name_attrs.len() > 1 {
             panic!("multiple name(...) attributes specified for sql_enum variant");
         }
-        let renames = if let Some(name_attr) = name_attrs.first() {
-            let name = name_attr.parse_args::<LitStr>().unwrap().value();
-            quote! {
-                #[postgres(name = #name)]
-                #[serde(rename = #name)]
-            }
-        } else {
-            let snake_case_name = ident.to_string().to_case(Case::Snake);
-            quote! {
-                #[postgres(name = #snake_case_name)]
-            }
+        let rename = match name_attrs.first() {
+            Some(name_attr) => name_attr.parse_args::<LitStr>().unwrap().value(),
+            None => variant.ident.to_string().to_case(Case::Snake),
         };
+        Self {
+            attrs: other_attrs.into_iter().cloned().collect(),
+            discriminant: variant.discriminant,
+            fields: variant.fields,
+            ident: variant.ident,
+            rename,
+        }
+    }
+}
+
+impl ToTokens for SqlEnumVariant {
+    fn to_tokens(&self, tokens: &mut ProcMacro2TokenStream) {
+        let attrs = &self.attrs;
+        let fields = &self.fields;
+        let ident = &self.ident;
+        let rename = &self.rename;
 
         tokens.extend(quote! {
-            #renames
-            #(#other_attrs)*
+            #[postgres(name = #rename)]
+            #[serde(rename = #rename)]
+            #(#attrs)*
             #ident #fields
         });
-        if let Some(discriminant) = &self.variant.discriminant {
+        if let Some(discriminant) = &self.discriminant {
             let expr = &discriminant.1;
             tokens.extend(quote! {
                 = #expr

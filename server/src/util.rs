@@ -6,7 +6,7 @@ use blake2::{Blake2s256, Digest};
 use chrono::{DateTime, Duration, SubsecRound, Utc};
 use deadpool_postgres::{Client, Pool};
 use poem::{http::header, web::cookie::Cookie, Body, Request, Response, ResponseBuilder, Result};
-use rand::{distributions::Alphanumeric, thread_rng, Rng, RngCore};
+use rand::{distributions::{Alphanumeric, Standard}, thread_rng, Rng};
 use secstr::SecStr;
 use serde::{Deserialize, Deserializer};
 use serde_json::Value as JsonValue;
@@ -20,6 +20,7 @@ use crate::{error::InternalError, CONFIG};
 fn add_cookie_fields(cookie: &mut Cookie) {
     cookie.set_http_only(true);
     cookie.set_path(&CONFIG.cookie.path);
+    cookie.set_same_site(CONFIG.cookie.same_site);
     cookie.set_secure(CONFIG.cookie.secure);
 }
 
@@ -34,15 +35,16 @@ pub fn remove_cookie(res: ResponseBuilder, name: &str) -> ResponseBuilder {
     res.header(header::SET_COOKIE, clear_cookie(name).to_string())
 }
 
-pub fn set_cookie(res: ResponseBuilder, name: &str, value: &str) -> ResponseBuilder {
+pub fn set_cookie(res: ResponseBuilder, name: &str, value: &str, max_age: Option<Duration>) -> ResponseBuilder {
     let mut cookie = Cookie::new_with_str(name, value);
     add_cookie_fields(&mut cookie);
+    if let Some(max_age) = max_age {
+        cookie.set_max_age(max_age.to_std().unwrap());
+    }
     res.header(header::SET_COOKIE, cookie.to_string())
 }
 
 // CRYPTOGRAPHIC UTILS
-
-const AES_GCM_SIV_NONCE_BYTES: usize = 12;
 
 pub fn base64_urlsafe(data: &[u8]) -> String {
     base64::encode_config(data, base64::URL_SAFE_NO_PAD)
@@ -54,9 +56,11 @@ pub fn blake2(text: &str) -> Vec<u8> {
     hasher.finalize().to_vec()
 }
 
+const AES_GCM_SIV_NONCE_BYTES: usize = 12;
+
 pub fn encrypt<R: Rng>(plaintext: &[u8], cipher: &Aes256GcmSiv, rng: &mut R) -> Result<Vec<u8>, InternalError> {
-    let mut nonce = vec![0u8; AES_GCM_SIV_NONCE_BYTES];
-    rng.fill_bytes(&mut nonce);
+    let mut nonce = [0u8; AES_GCM_SIV_NONCE_BYTES];
+    rng.try_fill(&mut nonce).map_err(InternalError::new)?;
     let nonce = Nonce::from_slice(&nonce);
 
     let mut encrypted = cipher
@@ -136,8 +140,10 @@ pub async fn get_session(req: &Request) -> Result<Session, SessionError> {
 #[allow(dead_code)]
 pub fn hash_encrypt_password(password: &str, cipher: &Aes256GcmSiv) -> Result<Vec<u8>, InternalError> {
     let mut rng = thread_rng();
-    let mut salt = vec![0u8; CONFIG.security.password_salt_bytes];
-    rng.fill_bytes(&mut salt);
+    let salt: Vec<u8> = thread_rng()
+        .sample_iter(&Standard)
+        .take(CONFIG.security.password_salt_bytes)
+        .collect();
     let hash = hash_encoded(password.as_bytes(), &salt, &Argon2Config::default())
         .map_err(InternalError::new)?;
 
@@ -175,6 +181,15 @@ pub fn build_json_response<F>(body: JsonValue, mutate: F) -> Result<Response>
     Ok(res.body(Body::from_json(body).map_err(InternalError::new)?))
 }
 
+// ROUTE UTILS
+
+macro_rules! get {
+    ($endpoint:ident) => {
+        poem::get($endpoint).head($endpoint)
+    }
+}
+pub(crate) use get;
+
 // SERDE UTILS
 
 pub fn optional<'de, T, D>(deserializer: D) -> Result<Option<T>, D::Error>
@@ -202,17 +217,26 @@ pub enum TotpAlgorithm {
     Sha512,
 }
 
-pub fn verify_totp(key: &[u8], totp: &str) -> bool {
+pub fn generate_totp_key() -> Vec<u8> {
+    thread_rng()
+        .sample_iter(&Standard)
+        .take(CONFIG.totp.key_bytes)
+        .collect()
+}
+
+pub fn generate_totp(key: &[u8], time: u64) -> String {
     let totp_fn = match CONFIG.totp.algorithm {
         TotpAlgorithm::Sha1 => totp_custom::<totp_lite::Sha1>,
         TotpAlgorithm::Sha256 => totp_custom::<totp_lite::Sha256>,
         TotpAlgorithm::Sha512 => totp_custom::<totp_lite::Sha512>,
     };
+    totp_fn(CONFIG.totp.time_step, CONFIG.totp.digits, key, time)
+}
+
+pub fn verify_totp(key: &[u8], totp: &str) -> bool {
     let now = utc_now().timestamp() as u64;
     let totp = SecStr::from(totp);
-    let verify = |time| {
-        totp == SecStr::from(totp_fn(CONFIG.totp.time_step, CONFIG.totp.digits, key, time))
-    };
+    let verify = |time| totp == SecStr::from(generate_totp(key, time));
 
     if verify(0) {
         return true;

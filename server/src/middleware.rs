@@ -6,7 +6,7 @@ use secstr::SecStr;
 use crate::{
     db::{Locale, PasswordChangeReason, Permission},
     error::{AuthError, BadRequest, CsrfError, InternalError},
-    util::{blake2, generate_token, get_db, utc_now},
+    util::{blake2, generate_token, get_db, get_session, utc_now, Session, SessionError},
     CONFIG,
 };
 
@@ -45,7 +45,7 @@ pub struct AuthRequired {
 }
 
 impl AuthRequired {
-    pub fn new(options: AuthRequiredOptions) -> AuthRequired {
+    pub fn new(options: AuthRequiredOptions) -> Self {
         AuthRequired { options }
     }
 }
@@ -82,7 +82,7 @@ impl<E: Endpoint> Endpoint for AuthRequiredImpl<E> {
         let db = get_db(&req).await?;
         let mut columns = vec![
             r#""users"."id""#,
-            r#""users"."disabled""#,
+            r#""users"."active""#,
             r#""sessions"."expires""#,
         ];
 
@@ -90,7 +90,7 @@ impl<E: Endpoint> Endpoint for AuthRequiredImpl<E> {
             columns.push(r#""users"."username""#);
         }
         if self.options.contains(AuthRequiredOptions::WITH_PASSWORD_HASH) {
-            columns.push(r#""users"."password_hash""#);
+            columns.push(r#""users"."password""#);
         }
         if self.options.contains(AuthRequiredOptions::WITH_TOTP_STATUS) {
             columns.push(r#""users"."totp_key" IS NOT NULL AS "totp_enabled""#);
@@ -130,7 +130,7 @@ impl<E: Endpoint> Endpoint for AuthRequiredImpl<E> {
             Err(BadRequest::new(AuthError::SessionExpired).remove_cookie(&CONFIG.session.cookie))?;
         }
 
-        if row.get("disabled") {
+        if !row.get::<_, bool>("active") {
             Err(
                 BadRequest::new(AuthError::AccountDisabled)
                     .remove_cookie(&CONFIG.remember_token.cookie)
@@ -155,7 +155,7 @@ impl<E: Endpoint> Endpoint for AuthRequiredImpl<E> {
             .options
             .contains(AuthRequiredOptions::WITH_PASSWORD_HASH)
         {
-            user.password_hash = Some(row.get("password_hash"));
+            user.password_hash = Some(row.get("password"));
         }
         if self.options.contains(AuthRequiredOptions::WITH_TOTP_STATUS) {
             user.totp_enabled = Some(row.get("totp_enabled"));
@@ -195,20 +195,14 @@ impl<E: Endpoint> Endpoint for AuthRequiredImpl<E> {
 async fn csrf_error(error: CsrfError, req: &Request) -> PoemError {
     let mut res = BadRequest::new(error);
 
-    if let Some(session_id) = req.cookie().get(&CONFIG.session.cookie) {
-        let session_id = session_id.value_str();
-        let db = match get_db(req).await {
-            Ok(client) => client,
-            Err(err) => return err.into(),
-        };
-        let query = r#"SELECT "csrf_token" FROM "sessions" WHERE "id" = $1"#;
-        match db.query_opt(query, &[&session_id]).await {
-            Ok(Some(row)) => return res.csrf(row.get("csrf_token")).into(),
-            Ok(None) => res = res.remove_cookie(&CONFIG.session.cookie),
-            Err(err) => return InternalError::new(err).into(),
-        };
+    match get_session(req).await {
+        Ok(Session { csrf_token }) => return res.csrf(csrf_token).into(),
+        Err(SessionError::NoCookie) => {},
+        Err(SessionError::ExpiredSession) | Err(SessionError::InvalidSession) => {
+            res = res.remove_cookie(&CONFIG.session.cookie);
+        },
+        Err(SessionError::InternalError(err)) => return err.into(),
     }
-
     res.csrf(generate_token(CONFIG.csrf.token_length)).into()
 }
 
