@@ -1,4 +1,5 @@
-/* eslint-disable @typescript-eslint/consistent-type-imports */
+/* eslint-disable @typescript-eslint/consistent-type-imports, import/no-unused-modules */
+
 type Alert = import("$lib/errors").Alert;
 type User = import("$lib/utils").User;
 

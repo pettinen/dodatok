@@ -5,16 +5,19 @@ use poem::web::websocket::{Message, WebSocketStream};
 use redis::{AsyncCommands, Client as RedisClient};
 use serde::{de, Deserialize, Deserializer, Serialize};
 use serde_json::{json, Value as JsonValue};
-use tokio::{sync::{broadcast, Mutex as AsyncMutex}, task::JoinHandle};
-
-use crate::{
-    error::{AuthError, GeneralError, InternalError, WebSocketError},
-    util::{generate_token, redis_join},
-    CONFIG,
+use tokio::{
+    sync::{broadcast, Mutex},
+    task::JoinHandle,
 };
 
-pub type AccountConnections = Arc<AsyncMutex<HashMap<String, HashMap<String, WebSocketConnection>>>>;
-pub type AccountRooms = Arc<AsyncMutex<HashMap<String, broadcast::Sender<String>>>>;
+use crate::{
+    config::Config,
+    error::{AuthError, GeneralError, InternalError, WebSocketError},
+    util::{generate_token, redis_join},
+};
+
+pub type AccountConnections = Arc<Mutex<HashMap<String, HashMap<String, WebSocketConnection>>>>;
+pub type AccountRooms = Arc<Mutex<HashMap<String, broadcast::Sender<String>>>>;
 type WebSocketSink = SplitSink<WebSocketStream, Message>;
 
 enum AccountEvent {
@@ -42,8 +45,8 @@ impl<'de> Deserialize<'de> for AccountEvent {
         let event = Event::deserialize(deserializer)?;
         match event.event {
             AccountEventType::Authenticate => AuthenticateEvent::deserialize(event.data)
-                    .map(AccountEvent::Authenticate)
-                    .map_err(de::Error::custom),
+                .map(AccountEvent::Authenticate)
+                .map_err(de::Error::custom),
         }
     }
 }
@@ -55,16 +58,18 @@ struct AuthenticateEvent {
 }
 
 pub struct WebSocketConnection {
+    channel_capacity: usize,
     room_handles: HashMap<String, JoinHandle<()>>,
-    sink: Arc<AsyncMutex<WebSocketSink>>,
+    sink: Arc<Mutex<WebSocketSink>>,
     pub user_id: Option<String>,
 }
 
 impl WebSocketConnection {
-    pub fn new(sink: WebSocketSink) -> Self {
+    pub fn new(sink: WebSocketSink, channel_capacity: usize) -> Self {
         Self {
+            channel_capacity,
             room_handles: HashMap::new(),
-            sink: Arc::new(AsyncMutex::new(sink)),
+            sink: Arc::new(Mutex::new(sink)),
             user_id: None,
         }
     }
@@ -84,7 +89,11 @@ impl WebSocketConnection {
         }
     }
 
-    pub async fn enter_room(&mut self, room: String, rooms: &AccountRooms) -> Result<(), WebSocketError> {
+    pub async fn enter_room(
+        &mut self,
+        room: String,
+        rooms: &AccountRooms,
+    ) -> Result<(), WebSocketError> {
         if self.room_handles.contains_key(&room) {
             return Err(WebSocketError::AlreadyInRoom);
         }
@@ -92,10 +101,10 @@ impl WebSocketConnection {
         let mut receiver = match rooms.get(&room) {
             Some(sender) => sender.subscribe(),
             None => {
-                let (sender, receiver) = broadcast::channel::<String>(CONFIG.websocket.channel_capacity);
+                let (sender, receiver) = broadcast::channel::<String>(self.channel_capacity);
                 rooms.insert(room.clone(), sender);
                 receiver
-            },
+            }
         };
         let sink = self.sink.clone();
         let handle = tokio::spawn(async move {
@@ -112,7 +121,11 @@ impl WebSocketConnection {
     }
 
     #[allow(dead_code)]
-    pub async fn leave_room(&mut self, room: &str, rooms: &AccountRooms) -> Result<(), WebSocketError> {
+    pub async fn leave_room(
+        &mut self,
+        room: &str,
+        rooms: &AccountRooms,
+    ) -> Result<(), WebSocketError> {
         if let Some(handle) = self.room_handles.remove(room) {
             handle.abort();
             let _ = handle.await;
@@ -129,12 +142,18 @@ impl WebSocketConnection {
     }
 
     pub async fn send(&self, message: JsonValue) -> std::io::Result<()> {
-        self.sink.lock().await.send(Message::Text(message.to_string())).await
+        self.sink
+            .lock()
+            .await
+            .send(Message::Text(message.to_string()))
+            .await
     }
 
     pub async fn send_error<E: Serialize>(&self, error: E) -> std::io::Result<()> {
-        self.sink.lock().await
-            .send(Message::Text(json!({"error": error}).to_string()))
+        self.sink
+            .lock()
+            .await
+            .send(Message::Text(json!({ "error": error }).to_string()))
             .await
     }
 }
@@ -149,6 +168,7 @@ pub async fn websocket_receiver(
     connections: AccountConnections,
     rooms: AccountRooms,
     redis: RedisClient,
+    config: Config,
 ) {
     let mut redis = match redis.get_async_connection().await {
         Ok(redis) => redis,
@@ -156,7 +176,7 @@ pub async fn websocket_receiver(
     };
 
     let (sink, mut stream) = socket.split();
-    let mut connection = WebSocketConnection::new(sink);
+    let mut connection = WebSocketConnection::new(sink, config.websocket.channel_capacity);
 
     let connection_ids = loop {
         let message = match stream.next().await {
@@ -169,11 +189,15 @@ pub async fn websocket_receiver(
             Message::Close(_) => break None,
             Message::Ping(_) | Message::Pong(_) => continue,
             Message::Binary(_) => {
-                if connection.send_error(WebSocketError::InvalidMessageType).await.is_err() {
+                if connection
+                    .send_error(WebSocketError::InvalidMessageType)
+                    .await
+                    .is_err()
+                {
                     break None;
                 }
                 continue;
-            },
+            }
         };
 
         let event = match get_event(message) {
@@ -183,30 +207,38 @@ pub async fn websocket_receiver(
                     break None;
                 }
                 continue;
-            },
+            }
         };
         let token = match event {
             AccountEvent::Authenticate(AuthenticateEvent { token }) => token,
         };
-        let redis_key = redis_join(&["websocket-token", "account", &token]);
+        let redis_key = redis_join(&["websocket-token", "account", &token], &config);
         let (user_id, session_id) = match redis.get::<_, String>(&redis_key).await {
             Ok(data) => match data.split_once(':') {
                 Some((user_id, session_id)) => (user_id.to_owned(), session_id.to_owned()),
                 None => {
-                    if connection.send_error(
-                        InternalError::new("invalid data in redis for websocket token"),
-                    ).await.is_err() {
+                    if connection
+                        .send_error(InternalError::new(
+                            "invalid data in redis for websocket token",
+                        ))
+                        .await
+                        .is_err()
+                    {
                         break None;
                     }
                     continue;
-                },
+                }
             },
             Err(_) => {
-                if connection.send_error(AuthError::InvalidCredentials).await.is_err() {
+                if connection
+                    .send_error(AuthError::InvalidCredentials)
+                    .await
+                    .is_err()
+                {
                     break None;
                 }
                 continue;
-            },
+            }
         };
 
         let mut connections = connections.lock().await;
@@ -220,18 +252,29 @@ pub async fn websocket_receiver(
         if redis.del::<_, usize>(redis_key).await.is_err() {
             InternalError::new("could not delete websocket token from redis");
         }
-        if let Err(err) = connection.enter_room(format!("user:{}", &user_id), &rooms).await {
-            if connection.send_error(InternalError::new(err)).await.is_err() {
+        if let Err(err) = connection
+            .enter_room(format!("user:{}", &user_id), &rooms)
+            .await
+        {
+            if connection
+                .send_error(InternalError::new(err))
+                .await
+                .is_err()
+            {
                 break None;
             }
             continue;
         }
         connection.user_id = Some(user_id.clone());
-        if connection.send(json!({"event": "authenticated"})).await.is_err() {
+        if connection
+            .send(json!({ "event": "authenticated" }))
+            .await
+            .is_err()
+        {
             break None;
         }
 
-        let connection_id = generate_token(CONFIG.websocket.connection_id_length);
+        let connection_id = generate_token(config.websocket.connection_id_length);
         session_connections.insert(connection_id.clone(), connection);
         break Some((session_id, connection_id));
     };
@@ -255,11 +298,15 @@ pub async fn websocket_receiver(
                 Message::Close(_) => break,
                 Message::Ping(_) | Message::Pong(_) => continue,
                 Message::Binary(_) => {
-                    if connection.send_error(WebSocketError::InvalidMessageType).await.is_err() {
+                    if connection
+                        .send_error(WebSocketError::InvalidMessageType)
+                        .await
+                        .is_err()
+                    {
                         break;
                     }
                     continue;
-                },
+                }
             };
 
             let event = match get_event(message) {
@@ -269,12 +316,16 @@ pub async fn websocket_receiver(
                         break;
                     }
                     continue;
-                },
+                }
             };
 
             match event {
                 AccountEvent::Authenticate(_) => {
-                    if connection.send_error(AuthError::AlreadyLoggedIn).await.is_err() {
+                    if connection
+                        .send_error(AuthError::AlreadyLoggedIn)
+                        .await
+                        .is_err()
+                    {
                         break;
                     }
                 }

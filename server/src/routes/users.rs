@@ -7,6 +7,7 @@ use poem::{
 use serde_json::json;
 
 use crate::{
+    config::Config,
     db::{Locale, PasswordChangeReason, Permission},
     error::{Forbidden, InternalError, NotFound},
     middleware::{AuthRequired, AuthRequiredOptions, CurrentUser},
@@ -17,11 +18,11 @@ fn current_user_response(current_user: &CurrentUser) -> Result<Response> {
     json_response(json!({
         "id": current_user.id,
         "username": current_user.username.as_ref().unwrap(),
-        "totpEnabled": current_user.totp_enabled,
-        "passwordChangeReason": current_user.password_change_reason,
+        "totp_enabled": current_user.totp_enabled,
+        "password_change_reason": current_user.password_change_reason,
         "icon": current_user.icon.as_ref().unwrap(),
         "locale": current_user.locale.as_ref().unwrap(),
-        "sudoUntil": current_user.sudo_until.unwrap().map(|datetime| datetime.to_rfc3339()),
+        "sudo_until": current_user.sudo_until.unwrap().map(|datetime| datetime.to_rfc3339()),
     }))
 }
 
@@ -60,7 +61,7 @@ async fn get_user(
     json_response(json!({
         "id": row.get::<_, &str>("id"),
         "username": row.get::<_, &str>("username"),
-        "passwordChangeReason": row.get::<_, Option<PasswordChangeReason>>(
+        "password_change_reason": row.get::<_, Option<PasswordChangeReason>>(
             "password_change_reason"
         ),
         "icon": row.get::<_, Option<&str>>("icon"),
@@ -68,7 +69,7 @@ async fn get_user(
     }))
 }
 
-pub fn routes() -> Route {
+pub fn routes(config: Config) -> Route {
     Route::new()
         .at(
             "/:user_id",
@@ -79,7 +80,8 @@ pub fn routes() -> Route {
                     | AuthRequiredOptions::WITH_LOCALE
                     | AuthRequiredOptions::WITH_PERMISSIONS
                     | AuthRequiredOptions::WITH_SUDO_UNTIL,
-            ))
+                config.clone(),
+            )),
         )
         .at(
             "/me",
@@ -91,6 +93,7 @@ pub fn routes() -> Route {
                     | AuthRequiredOptions::WITH_PERMISSIONS
                     | AuthRequiredOptions::WITH_SUDO_UNTIL
                     | AuthRequiredOptions::ALLOW_PASSWORD_CHANGE_REASON,
-            ))
+                config.clone(),
+            )),
         )
 }

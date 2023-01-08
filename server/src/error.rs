@@ -9,11 +9,14 @@ use poem::{
     web::cookie::Cookie,
     Body, Response,
 };
-use serde::ser::{Serialize, Serializer, SerializeMap};
+use serde::ser::{Serialize, SerializeMap, Serializer};
 use serde_json::{json, Value as JsonValue};
 use tracing::error;
 
-use crate::{util::{clear_cookie, set_cookie}, CONFIG};
+use crate::{
+    config::Config,
+    util::{clear_cookie, set_cookie},
+};
 use macros::alert_enum;
 
 pub trait Error: Serialize {
@@ -77,14 +80,16 @@ pub struct BadRequest<E> {
     error: E,
     csrf_token: Option<String>,
     cookies: Vec<Cookie>,
+    config: Config,
 }
 
 impl<E: Error> BadRequest<E> {
-    pub fn new(error: E) -> BadRequest<E> {
-        BadRequest {
+    pub fn new(error: E, config: &Config) -> BadRequest<E> {
+        Self {
             error,
             csrf_token: None,
             cookies: Vec::new(),
+            config: config.clone(),
         }
     }
 
@@ -94,7 +99,7 @@ impl<E: Error> BadRequest<E> {
     }
 
     pub fn remove_cookie(mut self, name: &str) -> Self {
-        self.cookies.push(clear_cookie(name));
+        self.cookies.push(clear_cookie(name, &self.config));
         self
     }
 }
@@ -120,10 +125,16 @@ impl<E: Error> ResponseError for BadRequest<E> {
         }
         if let Some(csrf_token) = &self.csrf_token {
             body.as_object_mut().unwrap().insert(
-                CONFIG.csrf.response_field.clone(),
+                self.config.csrf.response_field.clone(),
                 csrf_token.to_owned().into(),
             );
-            res = set_cookie(res, &CONFIG.csrf.cookie, &csrf_token, Some(CONFIG.csrf.cookie_lifetime));
+            res = set_cookie(
+                res,
+                &self.config.csrf.cookie,
+                &csrf_token,
+                Some(self.config.csrf.cookie_lifetime),
+                &self.config,
+            );
         }
         res.body(Body::from_json(body).unwrap())
     }
@@ -135,7 +146,8 @@ pub struct InternalError;
 
 impl Serialize for InternalError {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where S: Serializer
+    where
+        S: Serializer,
     {
         let mut map = serializer.serialize_map(Some(2))?;
         map.serialize_entry("source", "general")?;
@@ -174,24 +186,25 @@ impl ResponseError for NotFound {
 }
 
 pub async fn error_handler(err: PoemError) -> Response {
-    let res = err.as_response();
+    let error_string = format!("{}", err);
+    let is_internal_error = err.is::<InternalError>();
+    let is_parse_json_error = err.is::<ParseJsonError>();
+
+    let res = err.into_response();
     if let Some(ResponseComplete::True) = res.data::<ResponseComplete>() {
         return res;
     }
+    if res.status().is_server_error() && !is_internal_error {
+        InternalError::new(error_string);
+    }
 
-    let (parts, body) = res.into_parts();
-    let (mut parts, body) = if parts.status.is_server_error() && !err.is::<InternalError>() {
-        InternalError::new(&err).as_response().into_parts()
-    } else {
-        (parts, body)
-    };
-
+    let (mut parts, body) = res.into_parts();
     let original_body = match body.into_string().await {
         Ok(body) => body,
         Err(err) => return InternalError::new(err).as_response(),
     };
 
-    let error_id = if err.is::<ParseJsonError>() {
+    let error_id = if is_parse_json_error {
         "invalid-data".to_owned()
     } else {
         match parts.status.canonical_reason() {

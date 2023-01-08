@@ -30,7 +30,7 @@ CREATE TABLE "permissions" (
 );
 
 CREATE TABLE "remember_tokens" (
-  "id" text PRIMARY KEY CHECK (length("id") = 43),
+  "id" bytea PRIMARY KEY CHECK (length("id") = 32),
   "user_id" text NOT NULL REFERENCES "users"("id") ON DELETE CASCADE,
   "secret_hash" bytea NOT NULL CHECK (length("secret_hash") = 32)
 );
@@ -41,12 +41,6 @@ CREATE TABLE "sessions" (
   "csrf_token" text NOT NULL CHECK (length("id") = 43),
   "expires" timestamp(0) with time zone NOT NULL,
   "sudo_until" timestamp(0) with time zone
-);
-
-CREATE TABLE "websocket_tokens" (
-  "id" text PRIMARY KEY CHECK (length("id") = 43),
-  "user_id" text NOT NULL REFERENCES "users"("id") ON DELETE CASCADE,
-  "expires" timestamp(0) with time zone NOT NULL
 );
 
 INSERT INTO "users"("id", "username", "password_hash", "totp_key", "icon", "locale")

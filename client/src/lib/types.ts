@@ -1,5 +1,5 @@
 import Ajv from "ajv/dist/jtd.js";
-import type { JTDSchemaType } from "ajv/dist/jtd.js";
+import type { JTDSchemaType } from "ajv/dist/jtd.js";1
 
 import type { APIAlert } from "$lib/errors";
 
@@ -25,7 +25,7 @@ const apiAlertSchema: JTDSchemaType<APIAlert> = {
 };
 
 interface APIErrorResponse {
-  csrfToken?: string;
+  csrf_token?: string;
   errors: APIAlert[];
   warnings?: APIAlert[];
 }
@@ -35,7 +35,7 @@ const apiErrorResponseSchema: JTDSchemaType<APIErrorResponse> = {
     errors: { elements: apiAlertSchema },
   },
   optionalProperties: {
-    csrfToken: { type: "string" },
+    csrf_token: { type: "string" },
     warnings: { elements: apiAlertSchema },
   },
 };
@@ -46,21 +46,21 @@ export const validateAPIErrors = ajv.compile(apiErrorResponseSchema);
 export interface UserResponse {
   id: string;
   username: string;
-  totpEnabled: boolean;
-  passwordChangeReason: string | null;
+  totp_enabled: boolean;
+  password_change_reason: string | null;
   icon: string | null;
   locale: string;
-  sudoUntil: string | null;
+  sudo_until: string | null;
 }
 const userResponseSchema: JTDSchemaType<UserResponse> = {
   properties: {
     id: { type: "string" },
     username: { type: "string" },
-    totpEnabled: { type: "boolean" },
-    passwordChangeReason: { type: "string", nullable: true },
+    totp_enabled: { type: "boolean" },
+    password_change_reason: { type: "string", nullable: true },
     icon: { type: "string", nullable: true },
     locale: { type: "string" },
-    sudoUntil: { type: "string", nullable: true },
+    sudo_until: { type: "string", nullable: true },
   },
 };
 export const validateUserResponse = ajv.compile(userResponseSchema);
@@ -68,18 +68,18 @@ export const validateUserResponse = ajv.compile(userResponseSchema);
 
 interface PutUsernamePasswordResponse {
   errors?: APIAlert[];
-  passwordChangeReason?: string | null;
-  passwordUpdated?: boolean;
-  sudoUntil?: string;
+  password_change_reason?: string | null;
+  password_updated?: boolean;
+  sudo_until?: string;
   username?: string;
   warnings?: APIAlert[];
 }
 const putUsernamePasswordResponseSchema: JTDSchemaType<PutUsernamePasswordResponse> = {
   optionalProperties: {
     errors: { elements: apiAlertSchema },
-    passwordChangeReason: { type: "string", nullable: true },
-    passwordUpdated: { type: "boolean" },
-    sudoUntil: { type: "string" },
+    password_change_reason: { type: "string", nullable: true },
+    password_updated: { type: "boolean" },
+    sudo_until: { type: "string" },
     username: { type: "string" },
     warnings: { elements: apiAlertSchema },
   },
@@ -90,28 +90,28 @@ export const validatePutUsernamePasswordResponse = ajv.compile(putUsernamePasswo
 interface TOTPKeyResponse {
   expires: string;
   key: string;
-  qrCode: string;
+  qr_code: string;
 }
 const totpKeyResponseSchema: JTDSchemaType<TOTPKeyResponse> = {
   properties: {
     expires: { type: "string" },
     key: { type: "string" },
-    qrCode: { type: "string" },
+    qr_code: { type: "string" },
   },
 };
 export const validateTOTPKeyResponse = ajv.compile(totpKeyResponseSchema);
 
 
 interface TOTPResponse {
-  sudoUntil?: string;
-  totpEnabled: boolean;
+  sudo_until?: string;
+  totp_enabled: boolean;
 }
 const totpResponseSchema: JTDSchemaType<TOTPResponse> = {
   properties: {
-    totpEnabled: { type: "boolean" },
+    totp_enabled: { type: "boolean" },
   },
   optionalProperties: {
-    sudoUntil: { type: "string" },
+    sudo_until: { type: "string" },
   },
   additionalProperties: false,
 };
@@ -152,13 +152,13 @@ export const validateUsernameAvailableResponse = ajv.compile(usernameAvailableRe
 
 
 interface LoginResponse {
-  csrfToken: string;
+  csrf_token: string;
   user: UserResponse;
   warnings?: APIAlert[];
 }
 const loginResponseSchema: JTDSchemaType<LoginResponse> = {
   properties: {
-    csrfToken: { type: "string" },
+    csrf_token: { type: "string" },
     user: userResponseSchema,
   },
   optionalProperties: {
@@ -169,11 +169,11 @@ export const validateLoginResponse = ajv.compile(loginResponseSchema);
 
 
 interface CSRFTokenResponse {
-  csrfToken: string;
+  csrf_token: string;
 }
 const csrfTokenResponseSchema: JTDSchemaType<CSRFTokenResponse> = {
   properties: {
-    csrfToken: { type: "string" },
+    csrf_token: { type: "string" },
   },
 };
 export const validateCSRFTokenResponse = ajv.compile(csrfTokenResponseSchema);

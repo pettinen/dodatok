@@ -7,41 +7,58 @@ use redis::{AsyncCommands, Client as RedisClient};
 use serde_json::json;
 
 use crate::{
+    config::{Config, ConfigData},
     error::{Forbidden, InternalError},
-    middleware::{csrf, AuthRequired, CurrentUser},
+    middleware::{AuthRequired, Csrf, CurrentUser},
     util::{base64_urlsafe, generate_token, json_response, redis_join},
-    websocket::{websocket_receiver, AccountRooms, AccountConnections},
-    CONFIG,
+    websocket::{websocket_receiver, AccountConnections, AccountRooms},
 };
 
 #[handler]
 async fn websocket(
+    config: Data<&ConfigData>,
     req: &poem::Request,
     websocket: WebSocket,
     connections: Data<&AccountConnections>,
     rooms: Data<&AccountRooms>,
     redis: Data<&RedisClient>,
 ) -> Result<impl IntoResponse> {
-    if req.headers().get("Origin") != Some(&CONFIG.client.origin) {
+    let config = config.lock().await;
+    if req.headers().get("Origin") != Some(&config.client.origin) {
         Err(Forbidden)?;
     }
 
     let connections = connections.clone();
     let rooms = rooms.clone();
     let redis = redis.clone();
-    Ok(websocket.on_upgrade(|socket| async {
-        tokio::spawn(websocket_receiver(socket, connections, rooms, redis));
+    let config = config.clone();
+    Ok(websocket.on_upgrade(|socket| async move {
+        tokio::spawn(websocket_receiver(
+            socket,
+            connections,
+            rooms,
+            redis,
+            config,
+        ));
     }))
 }
 
 #[handler]
-async fn websocket_token(user: Data<&CurrentUser>, redis: Data<&RedisClient>) -> Result<Response> {
-    let mut redis = redis.get_async_connection().await.map_err(InternalError::new)?;
-    let token = generate_token(CONFIG.websocket.token_length);
-    let redis_key = redis_join(&["websocket-token", "account", &token]);
+async fn websocket_token(
+    config: Data<&ConfigData>,
+    user: Data<&CurrentUser>,
+    redis: Data<&RedisClient>,
+) -> Result<Response> {
+    let config = config.lock().await;
+    let mut redis = redis
+        .get_async_connection()
+        .await
+        .map_err(InternalError::new)?;
+    let token = generate_token(config.websocket.token_length);
+    let redis_key = redis_join(&["websocket-token", "account", &token], &config);
     let redis_value = format!("{}:{}", user.id, base64_urlsafe(&user.session_id_hash));
     redis
-        .set_ex(redis_key, redis_value, CONFIG.websocket.token_lifetime)
+        .set_ex(redis_key, redis_value, config.websocket.token_lifetime)
         .await
         .map_err(InternalError::new)?;
     json_response(json!({
@@ -50,16 +67,17 @@ async fn websocket_token(user: Data<&CurrentUser>, redis: Data<&RedisClient>) ->
 }
 
 #[handler]
-async fn websocket_clients(connections: Data<&AccountConnections>, rooms: Data<&AccountRooms>) -> Result<Response> {
+async fn websocket_clients(
+    connections: Data<&AccountConnections>,
+    rooms: Data<&AccountRooms>,
+) -> Result<Response> {
     let connections = connections.lock().await;
     let connections: std::collections::HashMap<_, _> = connections
         .iter()
         .map(|(session_id, session_connections)| {
             let session_connections: std::collections::HashMap<_, _> = session_connections
                 .iter()
-                .map(|(connection_id, connection)| {
-                    (connection_id, &connection.user_id)
-                })
+                .map(|(connection_id, connection)| (connection_id, &connection.user_id))
                 .collect();
             (session_id, session_connections)
         })
@@ -76,9 +94,16 @@ async fn websocket_clients(connections: Data<&AccountConnections>, rooms: Data<&
     }))
 }
 
-pub fn routes() -> Route {
+pub fn routes(config: Config) -> Route {
     Route::new()
         .at("/socket", get(websocket))
         .at("/socket/clients", get(websocket_clients))
-        .at("/socket/token", post(websocket_token.with(AuthRequired::default()).around(csrf)))
+        .at(
+            "/socket/token",
+            post(
+                websocket_token
+                    .with(AuthRequired::defaults(config.clone()))
+                    .with(Csrf::new(config.clone())),
+            ),
+        )
 }

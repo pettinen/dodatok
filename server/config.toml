@@ -1,3 +1,6 @@
+debug = true
+testing = false
+
 [client]
 origin = "http://kotori.lab:55555"
 
@@ -8,10 +11,10 @@ secure = false
 
 [csrf]
 token_bits = 256
-cookie = "csrfToken"
+cookie = "csrf_token"
 cookie_lifetime = 31_104_000
-header = "X-CSRF-Token"
-response_field = "csrfToken"
+header = "CSRF-Token"
+response_field = "csrf_token"
 
 [db]
 dbname = "dodatok"
@@ -22,7 +25,7 @@ url = "unix:///run/redis/redis.sock?db=0"
 key_separator = "|"
 
 [remember_token]
-cookie = "rememberToken"
+cookie = "remember_token"
 cookie_lifetime = 31_104_000
 id_bits = 256
 secret_bits = 256

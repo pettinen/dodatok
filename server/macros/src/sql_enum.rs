@@ -1,21 +1,13 @@
 use convert_case::{Case, Casing};
-use proc_macro::TokenStream as CompilerTokenStream;
-use proc_macro2::{Ident, Span, TokenStream as ProcMacro2TokenStream};
+use proc_macro2::{Ident, Span, TokenStream};
 use quote::{quote, ToTokens};
 use syn::{
     parse::{Parse, ParseBuffer},
-    parse_macro_input, Attribute, ItemEnum, LitStr, Variant,
+    token::Eq,
+    Attribute, Expr, Fields, ItemEnum, LitStr, Variant,
 };
 
-#[proc_macro_attribute]
-pub fn sql_enum(_meta: CompilerTokenStream, input: CompilerTokenStream) -> CompilerTokenStream {
-    parse_macro_input!(input as SqlEnum)
-        .to_token_stream()
-        .into()
-}
-
-#[derive(Debug)]
-struct SqlEnum {
+pub struct SqlEnum {
     enum_: ItemEnum,
     variants: Vec<SqlEnumVariant>,
 }
@@ -27,7 +19,7 @@ impl Parse for SqlEnum {
             .variants
             .clone()
             .into_iter()
-            .map(|variant| SqlEnumVariant { variant })
+            .map(SqlEnumVariant::new)
             .collect();
 
         Ok(Self { enum_, variants })
@@ -35,19 +27,27 @@ impl Parse for SqlEnum {
 }
 
 impl ToTokens for SqlEnum {
-    fn to_tokens(&self, tokens: &mut ProcMacro2TokenStream) {
+    fn to_tokens(&self, tokens: &mut TokenStream) {
         let attrs = &self.enum_.attrs;
         let vis = &self.enum_.vis;
         let ident = &self.enum_.ident;
         let generics = &self.enum_.generics;
-        let name_snake_case = to_snake_case(&self.enum_.ident);
+        let snake_case_name = &self.enum_.ident.to_string().to_case(Case::Snake);
         let variants = &self.variants;
+        let variant_names = variants.into_iter().map(|variant| &variant.rename);
         tokens.extend(quote! {
-            #[derive(FromSql, Serialize)]
-            #[postgres(name = #name_snake_case)]
+            #[derive(Debug, FromSql, ToSql, Serialize)]
+            #[postgres(name = #snake_case_name)]
+            #[serde(rename_all = "snake_case")]
             #(#attrs)*
             #vis enum #ident #generics {
                 #(#variants),*
+            }
+
+            impl #ident {
+                pub fn variants() -> Vec<String> {
+                    vec![#(#variant_names),*].into_iter().map(|name| name.to_owned()).collect()
+                }
             }
         })
     }
@@ -55,43 +55,55 @@ impl ToTokens for SqlEnum {
 
 #[derive(Debug)]
 struct SqlEnumVariant {
-    variant: Variant,
+    attrs: Vec<Attribute>,
+    discriminant: Option<(Eq, Expr)>,
+    fields: Fields,
+    ident: Ident,
+    rename: String,
 }
 
-impl ToTokens for SqlEnumVariant {
-    fn to_tokens(&self, tokens: &mut ProcMacro2TokenStream) {
-        let attrs = &self.variant.attrs;
-        let ident = &self.variant.ident;
-        let fields = &self.variant.fields;
-
+impl SqlEnumVariant {
+    fn new(variant: Variant) -> Self {
         let name_ident = Ident::new("name", Span::call_site());
-        let (name_attrs, other_attrs): (Vec<&Attribute>, Vec<&Attribute>) = attrs
+        let (name_attrs, other_attrs): (Vec<&Attribute>, Vec<&Attribute>) = variant
+            .attrs
             .iter()
             .partition(|attr| attr.path.is_ident(&name_ident));
         if name_attrs.len() > 1 {
             panic!("multiple name(...) attributes specified for sql_enum variant");
         }
-        let snake_case_name = if let Some(name_attr) = name_attrs.first() {
-            name_attr.parse_args::<LitStr>().unwrap().value()
-        } else {
-            to_snake_case(ident)
+        let rename = match name_attrs.first() {
+            Some(name_attr) => name_attr.parse_args::<LitStr>().unwrap().value(),
+            None => variant.ident.to_string().to_case(Case::Snake),
         };
+        Self {
+            attrs: other_attrs.into_iter().cloned().collect(),
+            discriminant: variant.discriminant,
+            fields: variant.fields,
+            ident: variant.ident,
+            rename,
+        }
+    }
+}
+
+impl ToTokens for SqlEnumVariant {
+    fn to_tokens(&self, tokens: &mut TokenStream) {
+        let attrs = &self.attrs;
+        let fields = &self.fields;
+        let ident = &self.ident;
+        let rename = &self.rename;
 
         tokens.extend(quote! {
-            #[postgres(name = #snake_case_name)]
-            #[serde(rename = #snake_case_name)]
-            #(#other_attrs)*
+            #[postgres(name = #rename)]
+            #[serde(rename = #rename)]
+            #(#attrs)*
             #ident #fields
         });
-        if let Some(discriminant) = &self.variant.discriminant {
+        if let Some(discriminant) = &self.discriminant {
             let expr = &discriminant.1;
             tokens.extend(quote! {
                 = #expr
             });
         }
     }
-}
-
-fn to_snake_case(ident: &Ident) -> String {
-    ident.to_string().to_case(Case::Snake)
 }

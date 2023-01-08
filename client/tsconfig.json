@@ -1,29 +1,18 @@
 {
-  "compilerOptions": {
-    "allowUnreachableCode": false,
-    "allowUnusedLabels": false,
-    "baseUrl": ".",
-    "exactOptionalPropertyTypes": true,
-    "forceConsistentCasingInFileNames": true,
-    "importsNotUsedAsValues": "error",
-    "lib": ["DOM", "ES2021"],
-    "module": "ES2022",
-    "moduleResolution": "node",
-    "newLine": "LF",
-    "noEmit": true,
-    "noImplicitOverride": true,
-    "noImplicitReturns": true,
-    "noUnusedLocals": true,
-    "noUnusedParameters": true,
-    "paths": {
-      "$lib": ["src/lib"],
-      "$lib/*": ["src/lib/*"]
-    },
-    "removeComments": true,
-    "resolveJsonModule": true,
-    "sourceMap": true,
-    "strict": true,
-    "target": "ES2021"
-  },
-  "include": ["src"]
+    "extends": "./.svelte-kit/tsconfig.json",
+      "compilerOptions": {
+        "allowUnreachableCode": false,
+        "allowUnusedLabels": false,
+        "exactOptionalPropertyTypes": true,
+        "forceConsistentCasingInFileNames": true,
+        "lib": ["ES2022"],
+        "newLine": "LF",
+        "noImplicitOverride": true,
+        "noImplicitReturns": true,
+        "noUnusedLocals": true,
+        "noUnusedParameters": true,
+        "skipLibCheck": true,
+        "sourceMap": true,
+        "strict": true
+    }
 }

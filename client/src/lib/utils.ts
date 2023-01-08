@@ -1,8 +1,9 @@
+import Ajv from "ajv/dist/jtd.js";
 import { get, writable } from "svelte/store";
 import type { Readable, Writable } from "svelte/store";
 import { locale as localeStore } from "svelte-i18n";
 
-import { browser, dev } from "$app/env";
+import { dev } from "$app/env";
 import { base } from "$app/paths";
 
 import { config } from "$lib/config";
@@ -17,14 +18,16 @@ import { validateAPIErrors } from "$lib/types";
 import type { JSONObject, UserResponse } from "$lib/types";
 
 
-export const log = (error: unknown): void => {
+export const ajv = new Ajv();
+
+export const log = (...args: unknown[]): void => {
   if (dev)
-    console.error(error);
+    console.error(...args);
 };
 
-export const unexpected = (error?: unknown): void => {
+export const unexpected = (...args: unknown[]): void => {
   errorStore.add("general.errors.unexpected");
-  log(error);
+  log(...args);
 };
 
 export const noop = (): void => {
@@ -49,8 +52,14 @@ interface APIFetchResponseWithoutData {
   warnings: Alert[] | null;
 }
 
-export interface User extends UserResponse {
+export interface User {
+  id: string;
+  username: string;
+  totpEnabled: boolean;
+  passwordChangeReason: string | null;
   icon: string;
+  locale: string;
+  sudoUntil: string | null;
 }
 
 type APIFetchResponse<T> = APIFetchResponseWithData<T> | APIFetchResponseWithoutData;
@@ -61,7 +70,7 @@ export const apiFetch = async <T>(
   method = "GET",
   body: FormData | JSONObject | null = null,
 ): Promise<APIFetchResponse<T>> => {
-  const error = (errorID: string): APIFetchResponse<T> => {
+  const errorReturn = (errorID: string): APIFetchResponse<T> => {
     errorStore.add(errorID);
     return {
       data: null,
@@ -72,7 +81,7 @@ export const apiFetch = async <T>(
 
   if (!url.startsWith("/")) {
     log(new Error("invalid API fetch URL"));
-    return error("general.errors.unexpected");
+    return errorReturn("general.errors.unexpected");
   }
 
   const options: APIFetchOptions = { headers: {}, method };
@@ -85,9 +94,9 @@ export const apiFetch = async <T>(
     }
   }
   if (method !== "GET") {
-    const csrfToken = localStorage.getItem(config.csrfTokenField);
+    const csrfToken = localStorage.getItem(config.csrfTokenStorageKey);
     if (csrfToken !== null)
-      options.headers["X-CSRF-Token"] = csrfToken;
+      options.headers[config.csrfTokenHeader] = csrfToken;
   }
 
   let response: Response;
@@ -95,7 +104,7 @@ export const apiFetch = async <T>(
     response = await fetch(`${base}/api${url}`, options);
   } catch (error) {
     log(error);
-    return error("general.errors.could-not-connect-to-server");
+    return errorReturn("general.errors.could-not-connect-to-server");
   }
 
   let data: unknown;
@@ -103,7 +112,7 @@ export const apiFetch = async <T>(
     data = await response.json();
   } catch (error) {
     log(error);
-    return error("validation.errors.invalid-data");
+    return errorReturn("validation.errors.invalid-data");
   }
 
   if (validate(data)) {
@@ -114,12 +123,12 @@ export const apiFetch = async <T>(
     const warnings = data.warnings ? data.warnings.map(convertAPIAlert("warning")) : null;
     if (warnings)
       warningStore.add(...warnings);
-    if (data.csrfToken)
-      localStorage.setItem(config.csrfTokenField, data.csrfToken);
+    if (data.csrf_token)
+      localStorage.setItem(config.csrfTokenStorageKey, data.csrf_token);
     return { data: null, errors, warnings };
   }
 
-  return error("validation.errors.invalid-data");
+  return errorReturn("validation.errors.invalid-data");
 };
 
 interface ModalStore extends Readable<string[]> {
@@ -156,8 +165,13 @@ export const user: Writable<User | null> = writable(null);
 export const userIconURL = (iconID: string): string => `${config.baseURLs.userIcon}/${iconID}.webp`;
 
 export const convertAPIUser = (apiUser: UserResponse): User => ({
-  ...apiUser,
+  id: apiUser.id,
+  username: apiUser.username,
+  totpEnabled: apiUser.totp_enabled,
+  passwordChangeReason: apiUser.password_change_reason,
   icon: apiUser.icon ? userIconURL(apiUser.icon) : config.defaultUserIcon,
+  locale: apiUser.locale,
+  sudoUntil: apiUser.sudo_until,
 });
 
 
@@ -167,10 +181,10 @@ export const updateUser = (data: UserUpdate): void => {
   const {
     icon,
     locale,
-    passwordChangeReason,
+    password_change_reason: passwordChangeReason,
     passwordUpdated,
-    sudoUntil,
-    totpEnabled,
+    sudo_until: sudoUntil,
+    totp_enabled: totpEnabled,
     username,
   } = data;
 

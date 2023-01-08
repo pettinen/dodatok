@@ -4,10 +4,10 @@ use poem::{async_trait, error::Error as PoemError, Endpoint, Middleware, Request
 use secstr::SecStr;
 
 use crate::{
+    config::Config,
     db::{Locale, PasswordChangeReason, Permission},
     error::{AuthError, BadRequest, CsrfError, InternalError},
     util::{blake2, generate_token, get_db, get_session, utc_now, Session, SessionError},
-    CONFIG,
 };
 
 bitflags! {
@@ -38,15 +38,21 @@ pub struct CurrentUser {
     pub permissions: Option<Vec<Permission>>,
     pub sudo_until: Option<Option<DateTime<Utc>>>,
 }
-
-#[derive(Default)]
 pub struct AuthRequired {
+    config: Config,
     options: AuthRequiredOptions,
 }
 
 impl AuthRequired {
-    pub fn new(options: AuthRequiredOptions) -> Self {
-        AuthRequired { options }
+    pub fn new(options: AuthRequiredOptions, config: Config) -> Self {
+        Self { config, options }
+    }
+
+    pub fn defaults(config: Config) -> Self {
+        Self {
+            config,
+            options: AuthRequiredOptions::default(),
+        }
     }
 }
 
@@ -55,6 +61,7 @@ impl<E: Endpoint> Middleware<E> for AuthRequired {
 
     fn transform(&self, endpoint: E) -> Self::Output {
         AuthRequiredImpl {
+            config: self.config.clone(),
             endpoint,
             options: self.options,
         }
@@ -62,6 +69,7 @@ impl<E: Endpoint> Middleware<E> for AuthRequired {
 }
 
 pub struct AuthRequiredImpl<E> {
+    config: Config,
     endpoint: E,
     options: AuthRequiredOptions,
 }
@@ -73,8 +81,8 @@ impl<E: Endpoint> Endpoint for AuthRequiredImpl<E> {
     async fn call(&self, mut req: Request) -> Result<Self::Output> {
         let session_id = req
             .cookie()
-            .get(&CONFIG.session.cookie)
-            .ok_or_else(|| BadRequest::new(AuthError::NotLoggedIn))?
+            .get(&self.config.session.cookie)
+            .ok_or_else(|| BadRequest::new(AuthError::NotLoggedIn, &self.config))?
             .value_str()
             .to_owned();
         let session_id_hash = blake2(&session_id);
@@ -89,14 +97,21 @@ impl<E: Endpoint> Endpoint for AuthRequiredImpl<E> {
         if self.options.contains(AuthRequiredOptions::WITH_USERNAME) {
             columns.push(r#""users"."username""#);
         }
-        if self.options.contains(AuthRequiredOptions::WITH_PASSWORD_HASH) {
+        if self
+            .options
+            .contains(AuthRequiredOptions::WITH_PASSWORD_HASH)
+        {
             columns.push(r#""users"."password""#);
         }
         if self.options.contains(AuthRequiredOptions::WITH_TOTP_STATUS) {
             columns.push(r#""users"."totp_key" IS NOT NULL AS "totp_enabled""#);
         }
-        if self.options.contains(AuthRequiredOptions::WITH_PASSWORD_CHANGE_REASON)
-            || !self.options.contains(AuthRequiredOptions::ALLOW_PASSWORD_CHANGE_REASON)
+        if self
+            .options
+            .contains(AuthRequiredOptions::WITH_PASSWORD_CHANGE_REASON)
+            || !self
+                .options
+                .contains(AuthRequiredOptions::ALLOW_PASSWORD_CHANGE_REASON)
         {
             columns.push(r#""users"."password_change_reason""#);
         }
@@ -123,24 +138,30 @@ impl<E: Endpoint> Endpoint for AuthRequiredImpl<E> {
             .await
             .map_err(InternalError::new)?
             .ok_or_else(|| {
-                BadRequest::new(AuthError::NotLoggedIn).remove_cookie(&CONFIG.session.cookie)
+                BadRequest::new(AuthError::NotLoggedIn, &self.config)
+                    .remove_cookie(&self.config.session.cookie)
             })?;
 
         if row.get::<_, DateTime<Utc>>("expires") < utc_now() {
-            Err(BadRequest::new(AuthError::SessionExpired).remove_cookie(&CONFIG.session.cookie))?;
+            Err(BadRequest::new(AuthError::SessionExpired, &self.config)
+                .remove_cookie(&self.config.session.cookie))?;
         }
 
         if !row.get::<_, bool>("active") {
-            Err(
-                BadRequest::new(AuthError::AccountDisabled)
-                    .remove_cookie(&CONFIG.remember_token.cookie)
-                    .remove_cookie(&CONFIG.session.cookie)
-            )?;
+            Err(BadRequest::new(AuthError::AccountDisabled, &self.config)
+                .remove_cookie(&self.config.remember_token.cookie)
+                .remove_cookie(&self.config.session.cookie))?;
         }
 
-        if !self.options.contains(AuthRequiredOptions::ALLOW_PASSWORD_CHANGE_REASON) {
+        if !self
+            .options
+            .contains(AuthRequiredOptions::ALLOW_PASSWORD_CHANGE_REASON)
+        {
             if let Some(_) = row.get::<_, Option<PasswordChangeReason>>("password_change_reason") {
-                Err(BadRequest::new(AuthError::PasswordChangeRequired))?;
+                Err(BadRequest::new(
+                    AuthError::PasswordChangeRequired,
+                    &self.config,
+                ))?;
             }
         }
 
@@ -160,7 +181,10 @@ impl<E: Endpoint> Endpoint for AuthRequiredImpl<E> {
         if self.options.contains(AuthRequiredOptions::WITH_TOTP_STATUS) {
             user.totp_enabled = Some(row.get("totp_enabled"));
         }
-        if self.options.contains(AuthRequiredOptions::WITH_PASSWORD_CHANGE_REASON) {
+        if self
+            .options
+            .contains(AuthRequiredOptions::WITH_PASSWORD_CHANGE_REASON)
+        {
             user.password_change_reason = Some(row.get("password_change_reason"));
         }
         if self.options.contains(AuthRequiredOptions::WITH_ICON) {
@@ -192,40 +216,68 @@ impl<E: Endpoint> Endpoint for AuthRequiredImpl<E> {
     }
 }
 
-async fn csrf_error(error: CsrfError, req: &Request) -> PoemError {
-    let mut res = BadRequest::new(error);
-
-    match get_session(req).await {
+async fn csrf_error(error: CsrfError, req: &Request, config: &Config) -> PoemError {
+    let mut res = BadRequest::new(error, config);
+    match get_session(req, &config).await {
         Ok(Session { csrf_token }) => return res.csrf(csrf_token).into(),
-        Err(SessionError::NoCookie) => {},
+        Err(SessionError::NoCookie) => {}
         Err(SessionError::ExpiredSession) | Err(SessionError::InvalidSession) => {
-            res = res.remove_cookie(&CONFIG.session.cookie);
-        },
+            res = res.remove_cookie(&config.session.cookie);
+        }
         Err(SessionError::InternalError(err)) => return err.into(),
     }
-    res.csrf(generate_token(CONFIG.csrf.token_length)).into()
+    res.csrf(generate_token(config.csrf.token_length)).into()
 }
 
-pub async fn csrf<E: Endpoint>(next: E, req: Request) -> Result<E::Output> {
-    let csrf_cookie = match req.cookie().get(&CONFIG.csrf.cookie) {
-        Some(cookie) => cookie.value_str().to_owned(),
-        None => return Err(csrf_error(CsrfError::MissingCookie, &req).await),
-    };
-    let csrf_cookie = SecStr::from(csrf_cookie);
+pub struct Csrf {
+    config: Config,
+}
 
-    let csrf_header = match req.headers().get(&CONFIG.csrf.header) {
-        Some(header) => header,
-        None => return Err(csrf_error(CsrfError::MissingHeader, &req).await),
-    };
-    let csrf_header = match csrf_header.to_str() {
-        Ok(header) => header,
-        Err(_) => return Err(csrf_error(CsrfError::InvalidHeader, &req).await),
-    };
-    let csrf_header = SecStr::from(csrf_header);
+impl Csrf {
+    pub fn new(config: Config) -> Self {
+        Self { config }
+    }
+}
 
-    if csrf_cookie != csrf_header {
-        Err(csrf_error(CsrfError::Mismatch, &req).await)
-    } else {
-        next.call(req).await
+impl<E: Endpoint> Middleware<E> for Csrf {
+    type Output = CsrfImpl<E>;
+
+    fn transform(&self, endpoint: E) -> Self::Output {
+        CsrfImpl {
+            config: self.config.clone(),
+            endpoint,
+        }
+    }
+}
+
+pub struct CsrfImpl<E> {
+    config: Config,
+    endpoint: E,
+}
+
+#[async_trait]
+impl<E: Endpoint> Endpoint for CsrfImpl<E> {
+    type Output = E::Output;
+
+    async fn call(&self, req: Request) -> Result<Self::Output> {
+        let csrf_cookie = match req.cookie().get(&self.config.csrf.cookie) {
+            Some(cookie) => cookie.value_str().to_owned(),
+            None => return Err(csrf_error(CsrfError::MissingCookie, &req, &self.config).await),
+        };
+        let csrf_cookie = SecStr::from(csrf_cookie);
+
+        let csrf_header = match req.headers().get(&self.config.csrf.header) {
+            Some(header) => header,
+            None => return Err(csrf_error(CsrfError::MissingHeader, &req, &self.config).await),
+        };
+        let csrf_header = match csrf_header.to_str() {
+            Ok(header) => header,
+            Err(_) => return Err(csrf_error(CsrfError::InvalidHeader, &req, &self.config).await),
+        };
+        let csrf_header = SecStr::from(csrf_header);
+        if csrf_cookie != csrf_header {
+            return Err(csrf_error(CsrfError::Mismatch, &req, &self.config).await);
+        }
+        self.endpoint.call(req).await
     }
 }

@@ -72,7 +72,7 @@
     infoMessages,
     warnings,
   } from "$lib/errors";
-  import { apiFetch, modals, unexpected, user } from "$lib/utils";
+  import { modals, unexpected, user } from "$lib/utils";
 
   import "normalize.css";
   import "@fontsource/fira-sans/latin.css";
@@ -101,9 +101,8 @@
   import { goto } from "$app/navigation";
   import { page, session, updated } from "$app/stores";
 
+  import { accountSocket } from "$lib/accountSocket";
   import { cache } from "$lib/cache";
-  import { accountSocket } from "$lib/sockets";
-  import { validateCSRFTokenResponse } from "$lib/types";
 
   import Message from "$lib/components/Message.svelte";
   import Navbar from "$lib/components/Navbar.svelte";
@@ -113,7 +112,7 @@
 
   if (browser) {
     if ($session.csrfToken)
-      localStorage.setItem(config.csrfTokenField, $session.csrfToken);
+      localStorage.setItem(config.csrfTokenStorageKey, $session.csrfToken);
 
     cache.load(config.defaultUserIcon);
     if ($user)

@@ -45,5 +45,4 @@ pub async fn create_app(config: Config) -> impl Endpoint<Output = Response> {
         .data(redis)
         .data(account_rooms)
         .data(account_connections)
-        .data(config.clone())
 }

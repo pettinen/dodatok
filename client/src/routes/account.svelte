@@ -232,15 +232,15 @@
 {/if}
 
 <script lang=ts>
-  import { onMount, tick } from "svelte";
+  import { tick } from "svelte";
   import { _ } from "svelte-i18n";
 
   import { goto } from "$app/navigation";
 
+  import { accountSocket } from "$lib/accountSocket";
   import { cache, cacheURL } from "$lib/cache";
   import { config } from "$lib/config";
   import { errors, gotErrors, infoMessages, warnings } from "$lib/errors";
-  import { accountSocket } from "$lib/sockets";
   import { sudo, time } from "$lib/time";
   import {
     validateCSRFTokenResponse,
@@ -268,22 +268,6 @@
     key: string;
     qrCode: string;
   }
-
-  let narrow = false;
-
-  onMount(() => {
-    const narrowBreakpoint = "33rem";
-    const narrowMediaQuery = matchMedia(`(max-width: ${narrowBreakpoint})`);
-    narrow = narrowMediaQuery.matches;
-    const update = (event: MediaQueryListEvent): void => {
-      narrow = event.matches;
-    };
-    narrowMediaQuery.addEventListener("change", update);
-
-    return (): void => {
-      narrowMediaQuery.removeEventListener("change", update);
-    };
-  });
 
   const errorSources = {
     currentPassword: [
@@ -344,7 +328,7 @@
       return;
     }
 
-    if (!$accountSocket?.connected)
+    if ($accountSocket?.readyState !== 1)
       updateUser(data);
 
     submitting = false;
@@ -397,13 +381,13 @@
       if (data.warnings)
         warnings.addFromAPI(data.warnings);
 
-      if (!$accountSocket?.connected)
+      if ($accountSocket?.readyState !== 1)
         updateUser(data);
 
       if (data.username)
         username = "";
 
-      if (data.passwordUpdated)
+      if (data.password_updated)
         newPassword = "";
 
       submitting = false;
@@ -457,7 +441,7 @@
     const { data } = await apiFetch(`/users/${$user.id}`, validateTOTPResponse, "PUT", body);
 
     if (data) {
-      if (!$accountSocket?.connected)
+      if ($accountSocket?.readyState !== 1)
         updateUser(data);
       cancelTOTPSetup();
       submitting = false;
@@ -500,7 +484,7 @@
     totpKey = {
       expires: new Date(data.expires),
       key: data.key,
-      qrCode: data.qrCode,
+      qrCode: data.qr_code,
     };
     fetchingTOTPSecret = false;
   };
@@ -539,10 +523,10 @@
     const { data } = await apiFetch(`/users/${$user.id}`, validateTOTPResponse, "PUT", body);
 
     if (data) {
-      if (data.sudoUntil)
-        $user.sudoUntil = data.sudoUntil;
+      if (data.sudo_until)
+        $user.sudoUntil = data.sudo_until;
 
-      if (!$accountSocket?.connected)
+      if ($accountSocket?.readyState !== 1)
         updateUser(data);
 
       submitting = false;
@@ -581,7 +565,7 @@
     }
 
     errors.clear(...errorSources.locale);
-    if (!$accountSocket?.connected)
+    if ($accountSocket?.readyState !== 1)
       updateUser(data);
     selectedLocale = data.locale;
     infoMessages.showTimed("account.locale-updated");
@@ -604,8 +588,8 @@
       return;
     }
 
-    if (!$accountSocket?.connected) {
-      localStorage.setItem(config.csrfTokenField, data.csrfToken);
+    if ($accountSocket?.readyState !== 1) {
+      localStorage.setItem(config.csrfTokenStorageKey, data.csrf_token);
       goto(config.pages.index).catch(unexpected);
       $user = null;
     }
@@ -638,7 +622,7 @@
     }
 
     infoMessages.clear();
-    localStorage.setItem(config.csrfTokenField, data.csrfToken);
+    localStorage.setItem(config.csrfTokenStorageKey, data.csrf_token);
 
     goto(config.pages.index).catch(unexpected);
     $user = null;
@@ -778,7 +762,7 @@
       return;
     }
 
-    if (!$accountSocket?.connected)
+    if ($accountSocket?.readyState !== 1)
       updateUser(data);
 
     submitting = false;

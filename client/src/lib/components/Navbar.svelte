@@ -218,10 +218,10 @@
   import { base } from "$app/paths";
   import { page, navigating } from "$app/stores";
 
+  import { accountSocket } from "$lib/accountSocket";
   import { cache, cacheURL } from "$lib/cache";
   import { config } from "$lib/config";
   import { errors, gotErrors, infoMessages, warnings } from "$lib/errors";
-  import { accountSocket } from "$lib/sockets";
   import { reveal } from "$lib/transitions";
   import { validateCSRFTokenResponse, validateLoginResponse } from "$lib/types";
   import type { JSONObject } from "$lib/types";
@@ -339,7 +339,7 @@
     if (data.user.icon)
       cache.load(userIconURL(data.user.icon));
     closeAccount();
-    localStorage.setItem(config.csrfTokenField, data.csrfToken);
+    localStorage.setItem(config.csrfTokenStorageKey, data.csrf_token);
 
     if (config.pages.noAuthRequired.includes($page.url.pathname))
       goto(config.pages.index).catch(unexpected);
@@ -369,7 +369,7 @@
     errors.clear();
     warnings.clear();
     infoMessages.clear();
-    localStorage.setItem(config.csrfTokenField, data.csrfToken);
+    localStorage.setItem(config.csrfTokenStorageKey, data.csrf_token);
     accountSocket.destroy();
 
     if (config.pages.authRequired.includes($page.url.pathname))

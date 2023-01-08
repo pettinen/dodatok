@@ -1,43 +1,51 @@
 use std::str::from_utf8;
 
-use aes_gcm_siv::{Aes256GcmSiv, Nonce, aead::Aead};
+use aes_gcm_siv::{aead::Aead, Aes256GcmSiv, Nonce};
 use argon2::{hash_encoded, verify_encoded, Config as Argon2Config};
 use blake2::{Blake2s256, Digest};
 use chrono::{DateTime, Duration, SubsecRound, Utc};
 use deadpool_postgres::{Client, Pool};
 use poem::{http::header, web::cookie::Cookie, Body, Request, Response, ResponseBuilder, Result};
-use rand::{distributions::{Alphanumeric, Standard}, thread_rng, Rng};
+use rand::{
+    distributions::{Alphanumeric, Standard},
+    thread_rng, Rng,
+};
 use secstr::SecStr;
 use serde::{Deserialize, Deserializer};
 use serde_json::Value as JsonValue;
 use totp_lite::totp_custom;
 
-use crate::{error::InternalError, CONFIG};
-
+use crate::{config::Config, error::InternalError};
 
 // COOKIE UTILS
 
-fn add_cookie_fields(cookie: &mut Cookie) {
+fn add_cookie_fields(cookie: &mut Cookie, config: &Config) {
     cookie.set_http_only(true);
-    cookie.set_path(&CONFIG.cookie.path);
-    cookie.set_same_site(CONFIG.cookie.same_site);
-    cookie.set_secure(CONFIG.cookie.secure);
+    cookie.set_path(&config.cookie.path);
+    cookie.set_same_site(config.cookie.same_site);
+    cookie.set_secure(config.cookie.secure);
 }
 
-pub fn clear_cookie(name: &str) -> Cookie {
+pub fn clear_cookie(name: &str, config: &Config) -> Cookie {
     let mut cookie = Cookie::named(name);
-    add_cookie_fields(&mut cookie);
+    add_cookie_fields(&mut cookie, config);
     cookie.set_max_age(Duration::zero().to_std().unwrap());
     cookie
 }
 
-pub fn remove_cookie(res: ResponseBuilder, name: &str) -> ResponseBuilder {
-    res.header(header::SET_COOKIE, clear_cookie(name).to_string())
+pub fn remove_cookie(res: ResponseBuilder, name: &str, config: &Config) -> ResponseBuilder {
+    res.header(header::SET_COOKIE, clear_cookie(name, config).to_string())
 }
 
-pub fn set_cookie(res: ResponseBuilder, name: &str, value: &str, max_age: Option<Duration>) -> ResponseBuilder {
+pub fn set_cookie(
+    res: ResponseBuilder,
+    name: &str,
+    value: &str,
+    max_age: Option<Duration>,
+    config: &Config,
+) -> ResponseBuilder {
     let mut cookie = Cookie::new_with_str(name, value);
-    add_cookie_fields(&mut cookie);
+    add_cookie_fields(&mut cookie, config);
     if let Some(max_age) = max_age {
         cookie.set_max_age(max_age.to_std().unwrap());
     }
@@ -58,7 +66,11 @@ pub fn blake2(text: &str) -> Vec<u8> {
 
 const AES_GCM_SIV_NONCE_BYTES: usize = 12;
 
-pub fn encrypt<R: Rng>(plaintext: &[u8], cipher: &Aes256GcmSiv, rng: &mut R) -> Result<Vec<u8>, InternalError> {
+pub fn encrypt<R: Rng>(
+    plaintext: &[u8],
+    cipher: &Aes256GcmSiv,
+    rng: &mut R,
+) -> Result<Vec<u8>, InternalError> {
     let mut nonce = [0u8; AES_GCM_SIV_NONCE_BYTES];
     rng.try_fill(&mut nonce).map_err(InternalError::new)?;
     let nonce = Nonce::from_slice(&nonce);
@@ -70,10 +82,15 @@ pub fn encrypt<R: Rng>(plaintext: &[u8], cipher: &Aes256GcmSiv, rng: &mut R) -> 
     Ok(encrypted)
 }
 
-pub fn decrypt(ciphertext_with_nonce: &[u8], cipher: &Aes256GcmSiv) -> Result<Vec<u8>, InternalError> {
+pub fn decrypt(
+    ciphertext_with_nonce: &[u8],
+    cipher: &Aes256GcmSiv,
+) -> Result<Vec<u8>, InternalError> {
     let input_length = ciphertext_with_nonce.len();
     if input_length < AES_GCM_SIV_NONCE_BYTES {
-        return Err(InternalError::new("encrypted data too short to contain nonce"));
+        return Err(InternalError::new(
+            "encrypted data too short to contain nonce",
+        ));
     }
     let (ciphertext, nonce) =
         ciphertext_with_nonce.split_at(input_length - AES_GCM_SIV_NONCE_BYTES);
@@ -111,15 +128,17 @@ pub enum SessionError {
     NoCookie,
 }
 
-pub async fn get_session(req: &Request) -> Result<Session, SessionError> {
+pub async fn get_session(req: &Request, config: &Config) -> Result<Session, SessionError> {
     let session_cookie = req
         .cookie()
-        .get(&CONFIG.session.cookie)
+        .get(&config.session.cookie)
         .ok_or_else(|| SessionError::NoCookie)?
         .value_str()
         .to_owned();
 
-    let db = get_db(req).await.map_err(|err| SessionError::InternalError(err))?;
+    let db = get_db(req)
+        .await
+        .map_err(|err| SessionError::InternalError(err))?;
     let query = r#"SELECT "csrf_token", "expires" FROM "sessions" WHERE "id" = $1"#;
     let row = db
         .query_opt(query, &[&blake2(&session_cookie)])
@@ -130,19 +149,24 @@ pub async fn get_session(req: &Request) -> Result<Session, SessionError> {
     if row.get::<_, DateTime<Utc>>("expires") < utc_now() {
         Err(SessionError::ExpiredSession)
     } else {
-        Ok(Session { csrf_token: row.get("csrf_token") })
+        Ok(Session {
+            csrf_token: row.get("csrf_token"),
+        })
     }
 }
-
 
 // PASSWORD UTILS
 
 #[allow(dead_code)]
-pub fn hash_encrypt_password(password: &str, cipher: &Aes256GcmSiv) -> Result<Vec<u8>, InternalError> {
+pub fn hash_encrypt_password(
+    password: &str,
+    cipher: &Aes256GcmSiv,
+    config: &Config,
+) -> Result<Vec<u8>, InternalError> {
     let mut rng = thread_rng();
     let salt: Vec<u8> = thread_rng()
         .sample_iter(&Standard)
-        .take(CONFIG.security.password_salt_bytes)
+        .take(config.security.password_salt_bytes)
         .collect();
     let hash = hash_encoded(password.as_bytes(), &salt, &Argon2Config::default())
         .map_err(InternalError::new)?;
@@ -162,8 +186,8 @@ pub fn verify_password(
 
 // REDIS UTILS
 
-pub fn redis_join(parts: &[&str]) -> String {
-    parts.join(&CONFIG.redis.key_separator)
+pub fn redis_join(parts: &[&str], config: &Config) -> String {
+    parts.join(&config.redis.key_separator)
 }
 
 // RESPONSE UTILS
@@ -175,7 +199,8 @@ pub fn json_response(body: JsonValue) -> Result<Response> {
 }
 
 pub fn build_json_response<F>(body: JsonValue, mutate: F) -> Result<Response>
-    where F: FnOnce(ResponseBuilder) -> ResponseBuilder
+where
+    F: FnOnce(ResponseBuilder) -> ResponseBuilder,
 {
     let res = mutate(Response::builder().content_type("application/json"));
     Ok(res.body(Body::from_json(body).map_err(InternalError::new)?))
@@ -186,15 +211,16 @@ pub fn build_json_response<F>(body: JsonValue, mutate: F) -> Result<Response>
 macro_rules! get {
     ($endpoint:ident) => {
         poem::get($endpoint).head($endpoint)
-    }
+    };
 }
 pub(crate) use get;
 
 // SERDE UTILS
 
 pub fn optional<'de, T, D>(deserializer: D) -> Result<Option<T>, D::Error>
-    where T: Deserialize<'de>,
-          D: Deserializer<'de>
+where
+    T: Deserialize<'de>,
+    D: Deserializer<'de>,
 {
     Deserialize::deserialize(deserializer).map(Some)
 }
@@ -207,7 +233,7 @@ pub fn utc_now() -> DateTime<Utc> {
 
 // TOTP UTILS
 
-#[derive(Deserialize)]
+#[derive(Clone, Deserialize)]
 pub enum TotpAlgorithm {
     #[serde(rename = "SHA-1")]
     Sha1,
@@ -217,31 +243,31 @@ pub enum TotpAlgorithm {
     Sha512,
 }
 
-pub fn generate_totp_key() -> Vec<u8> {
+pub fn generate_totp_key(config: &Config) -> Vec<u8> {
     thread_rng()
         .sample_iter(&Standard)
-        .take(CONFIG.totp.key_bytes)
+        .take(config.totp.key_bytes)
         .collect()
 }
 
-pub fn generate_totp(key: &[u8], time: u64) -> String {
-    let totp_fn = match CONFIG.totp.algorithm {
+pub fn generate_totp(key: &[u8], time: u64, config: &Config) -> String {
+    let totp_fn = match config.totp.algorithm {
         TotpAlgorithm::Sha1 => totp_custom::<totp_lite::Sha1>,
         TotpAlgorithm::Sha256 => totp_custom::<totp_lite::Sha256>,
         TotpAlgorithm::Sha512 => totp_custom::<totp_lite::Sha512>,
     };
-    totp_fn(CONFIG.totp.time_step, CONFIG.totp.digits, key, time)
+    totp_fn(config.totp.time_step, config.totp.digits, key, time)
 }
 
-pub fn verify_totp(key: &[u8], totp: &str) -> bool {
+pub fn verify_totp(key: &[u8], totp: &str, config: &Config) -> bool {
     let now = utc_now().timestamp() as u64;
     let totp = SecStr::from(totp);
-    let verify = |time| totp == SecStr::from(generate_totp(key, time));
+    let verify = |time| totp == SecStr::from(generate_totp(key, time, config));
 
     if verify(0) {
         return true;
     }
-    for i in 1..=CONFIG.totp.time_window {
+    for i in 1..=config.totp.time_window {
         let i = i as u64;
         if verify(now - i) || verify(now + i) {
             return true;
