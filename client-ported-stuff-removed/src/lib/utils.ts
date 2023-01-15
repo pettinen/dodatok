@@ -18,22 +18,6 @@ import { validateAPIErrors } from "$lib/types";
 import type { JSONObject, UserResponse } from "$lib/types";
 
 
-export const ajv = new Ajv();
-
-export const log = (...args: unknown[]): void => {
-  if (dev)
-    console.error(...args);
-};
-
-export const unexpected = (...args: unknown[]): void => {
-  errorStore.add("general.errors.unexpected");
-  log(...args);
-};
-
-export const noop = (): void => {
-  // Do nothing
-};
-
 interface APIFetchOptions {
   body?: FormData | string;
   headers: Record<string, string>;
@@ -50,16 +34,6 @@ interface APIFetchResponseWithoutData {
   data: null;
   errors: Alert[];
   warnings: Alert[] | null;
-}
-
-export interface User {
-  id: string;
-  username: string;
-  totpEnabled: boolean;
-  passwordChangeReason: string | null;
-  icon: string;
-  locale: string;
-  sudoUntil: string | null;
 }
 
 type APIFetchResponse<T> = APIFetchResponseWithData<T> | APIFetchResponseWithoutData;

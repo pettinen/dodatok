@@ -10,7 +10,7 @@ use serde::Deserialize;
 use serde_json::json;
 
 use crate::{
-    config::{Config, ConfigData},
+    config::Config,
     db::{Locale, PasswordChangeReason},
     error::{AuthError, AuthWarning, BadRequest, InternalError},
     middleware::{AuthRequired, AuthRequiredOptions, Csrf, CurrentUser},
@@ -21,8 +21,7 @@ use crate::{
 };
 
 #[handler]
-async fn get_csrf_token(config: Data<&ConfigData>, req: &Request) -> Result<Response> {
-    let config = config.lock().await;
+async fn get_csrf_token(config: Data<&Config>, req: &Request) -> Result<Response> {
     let (csrf_token, remove_session_cookie) = match get_session(req, &config).await {
         Ok(Session { csrf_token }) => (Some(csrf_token), false),
         Err(SessionError::ExpiredSession) | Err(SessionError::InvalidSession) => (None, true),
@@ -61,13 +60,12 @@ struct LoginData {
 
 #[handler]
 async fn login(
-    config: Data<&ConfigData>,
+    config: Data<&Config>,
     aes: Data<&Aes256GcmSiv>,
     db: Data<&Pool>,
     req: &Request,
     Json(data): Json<LoginData>,
 ) -> Result<Response> {
-    let config = config.lock().await;
     let error_response = |error: AuthError, clear_session_cookie: bool| {
         let res = BadRequest::new(error, &config);
         if clear_session_cookie {
@@ -266,12 +264,11 @@ async fn login(
 
 #[handler]
 async fn logout(
-    config: Data<&ConfigData>,
+    config: Data<&Config>,
     cookies: &CookieJar,
     db: Data<&Pool>,
     user: Data<&CurrentUser>,
 ) -> Result<Response> {
-    let config = config.lock().await;
     let mut db = db.get().await.map_err(InternalError::new)?;
     let transaction = db.transaction().await.map_err(InternalError::new)?;
 
@@ -334,12 +331,11 @@ async fn logout(
 
 #[handler]
 async fn logout_all_sessions(
-    config: Data<&ConfigData>,
+    config: Data<&Config>,
     cookies: &CookieJar,
     db: Data<&Pool>,
     user: Data<&CurrentUser>,
 ) -> Result<Response> {
-    let config = config.lock().await;
     let mut db = db.get().await.map_err(InternalError::new)?;
     let transaction = db.transaction().await.map_err(InternalError::new)?;
 
@@ -386,11 +382,10 @@ async fn logout_all_sessions(
 
 #[handler]
 async fn restore_session(
-    config: Data<&ConfigData>,
+    config: Data<&Config>,
     cookies: &CookieJar,
     db: Data<&Pool>,
 ) -> Result<Response> {
-    let config = config.lock().await;
     let error_response =
         |error: AuthError, delete_remember_cookie: bool, delete_session_cookie: bool| {
             let mut res = BadRequest::new(error, &config);

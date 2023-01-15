@@ -809,7 +809,7 @@
 
 <style lang=scss>
   @use "sass:color";
-  @use "globals.scss" as g;
+  @use "$lib/styles/globals.scss" as g;
 
   $narrow-breakpoint: 33rem;
   $user-icon-size: 10rem;

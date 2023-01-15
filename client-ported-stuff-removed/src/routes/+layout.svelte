@@ -57,49 +57,9 @@
   {/if}
 {/if}
 
-<script context=module lang=ts>
-  import { getLocaleFromNavigator, init, isLoading, locale, register } from "svelte-i18n";
-  import type { Load } from "@sveltejs/kit";
-
-  import { browser } from "$app/env";
-
-  import { config } from "$lib/config";
-  import {
-    errors,
-    formatError,
-    formatInfoMessage,
-    formatWarning,
-    infoMessages,
-    warnings,
-  } from "$lib/errors";
-  import { modals, unexpected, user } from "$lib/utils";
-
-  import "normalize.css";
-  import "@fontsource/fira-sans/latin.css";
-  import "material-icons/iconfont/material-icons.css";
-  import "$lib/styles/main.scss";
-
-
-  export const load: Load = async ({ session }) => {
-    for (const localeID of Object.keys(config.locales))
-      register(localeID, async () => import(`../translations/${localeID}.json`));
-
-    await init({
-      fallbackLocale: config.defaultLocale,
-      initialLocale: session.user?.locale
-        ?? (browser ? localStorage.getItem("locale") : null)
-        ?? getLocaleFromNavigator(),
-    });
-
-    errors.add(...session.errors);
-
-    return {};
-  };
-</script>
-
 <script lang=ts>
   import { goto } from "$app/navigation";
-  import { page, session, updated } from "$app/stores";
+  import { page, updated } from "$app/stores";
 
   import { accountSocket } from "$lib/accountSocket";
   import { cache } from "$lib/cache";
@@ -107,8 +67,9 @@
   import Message from "$lib/components/Message.svelte";
   import Navbar from "$lib/components/Navbar.svelte";
 
+  export let data;
 
-  user.set($session.user);
+  user.set($page.data.user);
 
   if (browser) {
     if ($session.csrfToken)
@@ -118,12 +79,6 @@
     if ($user)
       cache.load($user.icon);
   }
-
-  const clearMessages = (): void => {
-    errors.clear();
-    warnings.clear();
-    infoMessages.clear();
-  };
 
   const onWindowKeydown = (event: KeyboardEvent): void => {
     if (event.key === "Escape") {
@@ -153,7 +108,7 @@
 </script>
 
 <style lang=scss>
-  @use "globals.scss" as g;
+  @use "$lib/styles/globals.scss" as g;
 
   .messages {
     position: fixed;

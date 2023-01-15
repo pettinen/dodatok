@@ -3,7 +3,7 @@ import { _ } from "svelte-i18n";
 import { derived, writable } from "svelte/store";
 import type { Readable, Writable } from "svelte/store";
 
-import { dev } from "$app/env";
+import { dev } from "$app/environment";
 
 import { config } from "$lib/config";
 import type { JSONPrimitive } from "$lib/types";

@@ -43,24 +43,60 @@ fn enum_variants(variants: Vec<String>) -> String {
         .join(", ")
 }
 
+fn sanitize_db_identifier(value: &str) -> String {
+    if value.contains('\0') {
+        panic!("Postgres identifiers must not contain null characters");
+    }
+    value.replace('"', "\"\"")
+}
+
 pub async fn init_db(drop_existing: bool, config: &Config) {
-    let dbname = config.db.dbname.as_ref().unwrap();
-    let mut postgres_config = DbConfig::new();
-    postgres_config.application_name = config.db.application_name.clone();
-    postgres_config.dbname = Some("postgres".to_owned());
-    let postgres_pool = postgres_config.create_pool(None, NoTls).unwrap();
-    let postgres_db = postgres_pool.get().await.unwrap();
-    if let Err(err) = postgres_db
-        .execute(&format!("CREATE DATABASE {}", dbname), &[])
+    let Some(init_config) = config.dev.init_db.as_ref() else {
+        return;
+    };
+    let pool = init_config.create_pool(None, NoTls).unwrap();
+    let db = pool.get().await.unwrap();
+    let dbname = sanitize_db_identifier(config.db.dbname.as_ref().unwrap());
+    let user = sanitize_db_identifier(config.db.user.as_ref().unwrap());
+    let password = config.db.password.as_ref().unwrap().replace('\'', "''");
+    if let Err(err) = db
+        .execute(
+            &format!(
+                r#"CREATE DATABASE "{}""#, dbname
+            ),
+            &[],
+        )
         .await
     {
         if err.code() != Some(&SqlState::DUPLICATE_DATABASE) {
             panic!("{}", err);
         }
     }
+    if let Err(err) = db
+        .execute(
+            &format!(r#"CREATE USER "{}""#, user),
+            &[],
+        )
+        .await
+    {
+        if err.code() != Some(&SqlState::DUPLICATE_OBJECT) {
+            panic!("{}", err);
+        }
+    }
+    db.execute(
+        &format!(r#"ALTER ROLE "{}" PASSWORD '{}'"#, user, password),
+        &[],
+    )
+    .await
+    .unwrap();
 
-    let pool = config.db.create_pool(None, NoTls).unwrap();
+    let init_config = DbConfig{
+        dbname: config.db.dbname.clone(),
+        ..init_config.clone()
+    };
+    let pool = init_config.create_pool(None, NoTls).unwrap();
     let db = pool.get().await.unwrap();
+
     let aes = Aes256GcmSiv::new_from_slice(&config.security.aes_key).unwrap();
 
     let password_hash_length = hash_encrypt_password("a", &aes, config).unwrap().len();
@@ -155,6 +191,13 @@ pub async fn init_db(drop_existing: bool, config: &Config) {
         blake2_output_length = blake2("").len(),
         csrf_token_length = config.csrf.token_length,
     ))
+    .await
+    .unwrap();
+
+    db.execute(
+        &format!(r#"GRANT ALL ON ALL TABLES IN SCHEMA "public" TO "{}""#, user),
+        &[],
+    )
     .await
     .unwrap();
 }

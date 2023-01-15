@@ -3,7 +3,7 @@ import type { CookieSerializeOptions } from "cookie";
 // eslint-disable-next-line @typescript-eslint/no-redeclare
 import type { RequestInfo, RequestInit, Response } from "node-fetch";
 import { parse as parseSetCookie } from "set-cookie-parser";
-import type { GetSession, Handle } from "@sveltejs/kit";
+import type { Handle } from "@sveltejs/kit";
 
 import { config } from "$lib/config";
 import { convertAPIAlert } from "$lib/errors";
@@ -14,8 +14,6 @@ import { convertAPIUser, log } from "$lib/utils";
 
 // eslint-disable-next-line no-implicit-globals
 declare function fetch(url: RequestInfo, init?: RequestInit): Promise<Response>;
-
-export const getSession: GetSession = ({ locals }) => locals;
 
 const serializeSetCookie = (name: string, value: string): string => {
   const cookieOptions: CookieSerializeOptions = {

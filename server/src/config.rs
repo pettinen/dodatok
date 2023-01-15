@@ -1,10 +1,9 @@
-use std::{fmt, sync::Arc};
+use std::fmt;
 
 use chrono::Duration;
 use deadpool_postgres::Config as DbConfig;
 use poem::{http::HeaderValue, web::cookie::SameSite};
 use serde::Deserialize;
-use tokio::sync::Mutex;
 use toml;
 
 use crate::util::TotpAlgorithm;
@@ -53,8 +52,38 @@ pub struct CsrfConfig {
 
 #[derive(Deserialize)]
 pub struct DbConfigInput {
-    pub application_name: Option<String>,
+    pub user: String,
+    pub password: String,
     pub dbname: String,
+    pub application_name: Option<String>,
+    pub host: Option<String>,
+    pub port: Option<u16>,
+}
+
+impl DbConfigInput {
+    fn as_db_config(self: &DbConfigInput) -> DbConfig {
+        DbConfig {
+            user: Some(self.user.clone()),
+            password: Some(self.password.clone()),
+            dbname: Some(self.dbname.clone()),
+            application_name: self.application_name.clone(),
+            host: self.host.clone(),
+            port: self.port,
+            ..Default::default()
+        }
+    }
+}
+
+#[derive(Deserialize)]
+pub struct DevConfigInput {
+    pub init_db: Option<DbConfigInput>,
+    pub testing: bool,
+}
+
+#[derive(Clone)]
+pub struct DevConfig {
+    pub init_db: Option<DbConfig>,
+    pub testing: bool,
 }
 
 #[derive(Deserialize)]
@@ -177,6 +206,7 @@ pub struct ConfigInput {
     pub cookie: CookieConfigInput,
     pub csrf: CsrfConfigInput,
     pub db: DbConfigInput,
+    pub dev: Option<DevConfigInput>,
     pub redis: RedisConfigInput,
     pub remember_token: RememberTokenConfigInput,
     pub security: SecurityConfigInput,
@@ -194,6 +224,7 @@ pub struct Config {
     pub cookie: CookieConfig,
     pub csrf: CsrfConfig,
     pub db: DbConfig,
+    pub dev: DevConfig,
     pub redis: RedisConfig,
     pub remember_token: RememberTokenConfig,
     pub security: SecurityConfig,
@@ -233,11 +264,17 @@ impl Config {
                 response_field: input.csrf.response_field.clone(),
                 token_length: alphanum_token_length(input.csrf.token_bits),
             },
-            db: {
-                let mut db_config = DbConfig::new();
-                db_config.application_name = input.db.application_name.clone();
-                db_config.dbname = Some(input.db.dbname.clone());
-                db_config
+            db: input.db.as_db_config(),
+            dev: if let Some(dev_config) = &input.dev {
+                DevConfig {
+                    init_db: dev_config.init_db.as_ref().map(|config| config.as_db_config()),
+                    testing: dev_config.testing,
+                }
+            } else {
+                DevConfig {
+                    init_db: None,
+                    testing: false,
+                }
             },
             redis: RedisConfig {
                 url: input.redis.url.clone(),
@@ -296,5 +333,3 @@ impl fmt::Debug for Config {
         write!(f, "Config")
     }
 }
-
-pub type ConfigData = Arc<Mutex<Config>>;

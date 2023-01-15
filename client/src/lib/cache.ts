@@ -1,7 +1,7 @@
 import { derived, writable } from "svelte/store";
 import type { Readable } from "svelte/store";
 
-import { browser } from "$app/env";
+import { browser } from "$app/environment";
 
 import { unexpected } from "$lib/utils";
 

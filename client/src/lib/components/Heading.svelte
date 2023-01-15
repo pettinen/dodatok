@@ -43,7 +43,7 @@
 </script>
 
 <style lang=scss>
-  @use "globals.scss" as g;
+  @use "$lib/styles/globals.scss" as g;
 
   h1 {
     height: g.$icon-button-size;

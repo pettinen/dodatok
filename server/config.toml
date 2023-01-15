@@ -17,8 +17,23 @@ header = "CSRF-Token"
 response_field = "csrf_token"
 
 [db]
-dbname = "dodatok"
+dbname = "d\"datok"
 application_name = "dodatok"
+user = "d\"datok"
+password = "d'"
+host = "db"
+port = 5432
+
+[dev]
+testing = false
+
+[dev.init_db]
+dbname = "postgres"
+application_name = "dodatok"
+user = "postgres"
+password = "pw"
+host = "db"
+port = 5432
 
 [redis]
 url = "unix:///run/redis/redis.sock?db=0"

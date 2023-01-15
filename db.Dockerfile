@@ -1,0 +1,2 @@
+FROM postgres:15.1-alpine3.17
+ENV POSTGRES_PASSWORD=pw

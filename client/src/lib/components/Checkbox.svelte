@@ -24,7 +24,7 @@
 </script>
 
 <style lang="scss">
-  @use "globals.scss" as g;
+  @use "$lib/styles/globals.scss" as g;
 
   $checkbox-size: 0.8rem;
   $checkbox-outline: 0.15rem;

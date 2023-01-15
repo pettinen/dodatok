@@ -24,11 +24,10 @@ pub async fn create_app(config: Config) -> impl Endpoint<Output = Response> {
     let redis = RedisClient::open(config.redis.url.clone()).unwrap();
     let account_rooms: AccountRooms = Arc::new(Mutex::new(HashMap::new()));
     let account_connections: AccountConnections = Arc::new(Mutex::new(HashMap::new()));
-    let config_data = Arc::new(Mutex::new(config.clone()));
 
-    if config.debug {
+    if config.dev.init_db.is_some() {
         db::init_db(true, &config).await;
-        if !config.testing {
+        if !config.dev.testing {
             db::populate_db(&config, &aes).await;
         }
     }
@@ -40,7 +39,7 @@ pub async fn create_app(config: Config) -> impl Endpoint<Output = Response> {
         .catch_all_error(error_handler)
         .with(CookieJarManager::new())
         .data(aes)
-        .data(config_data)
+        .data(config)
         .data(db)
         .data(redis)
         .data(account_rooms)

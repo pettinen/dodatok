@@ -7,7 +7,7 @@ use redis::{AsyncCommands, Client as RedisClient};
 use serde_json::json;
 
 use crate::{
-    config::{Config, ConfigData},
+    config::Config,
     error::{Forbidden, InternalError},
     middleware::{AuthRequired, Csrf, CurrentUser},
     util::{base64_urlsafe, generate_token, json_response, redis_join},
@@ -16,14 +16,13 @@ use crate::{
 
 #[handler]
 async fn websocket(
-    config: Data<&ConfigData>,
+    config: Data<&Config>,
     req: &poem::Request,
     websocket: WebSocket,
     connections: Data<&AccountConnections>,
     rooms: Data<&AccountRooms>,
     redis: Data<&RedisClient>,
 ) -> Result<impl IntoResponse> {
-    let config = config.lock().await;
     if req.headers().get("Origin") != Some(&config.client.origin) {
         Err(Forbidden)?;
     }
@@ -45,11 +44,10 @@ async fn websocket(
 
 #[handler]
 async fn websocket_token(
-    config: Data<&ConfigData>,
+    config: Data<&Config>,
     user: Data<&CurrentUser>,
     redis: Data<&RedisClient>,
 ) -> Result<Response> {
-    let config = config.lock().await;
     let mut redis = redis
         .get_async_connection()
         .await
