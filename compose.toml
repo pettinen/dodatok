@@ -1,0 +1,9 @@
+[services.api]
+build = "server"
+depends_on = ["db"]
+ports = ["5000:5000"]
+volumes = ["./server:/program"]
+
+[services.db]
+build = { context = ".", dockerfile = "db.Dockerfile" }
+expose = ["5432"]

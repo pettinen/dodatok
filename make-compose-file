@@ -1,0 +1,4 @@
+#!/bin/sh
+
+cd "$(dirname "$0")"
+tomlq . compose.toml | yq -y > compose.yaml
