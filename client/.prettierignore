@@ -1,0 +1,4 @@
+/.svelte-kit/
+/pnpm-lock.yaml
+/src/i18n/*/messages.mjs
+build/

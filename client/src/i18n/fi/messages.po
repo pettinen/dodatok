@@ -1,0 +1,8 @@
+msgid "auth.errors.invalid-credentials"
+msgstr "Käyttäjätunnus tai salasana on väärin."
+
+msgid "general.errors.unexpected"
+msgstr "Jotain tapahtui :("
+
+msgid "testan"
+msgstr "käännetty!"

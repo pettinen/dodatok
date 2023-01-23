@@ -1,0 +1,1 @@
+/*eslint-disable*/export const messages={"auth.errors.invalid-credentials":"Käyttäjätunnus tai salasana on väärin.","general.errors.unexpected":"Jotain tapahtui :(","testan":"käännetty!"};

@@ -1,19 +1,16 @@
-/* eslint-disable @typescript-eslint/consistent-type-imports, import/no-unused-modules */
+import type { Language } from "$i18n";
+import type { Alert } from "$lib/alerts";
 
-type Alert = import("$lib/errors").Alert;
-type User = import("$lib/utils").User;
+declare global {
+    namespace App {
+        interface Locals {
+            csrf_token?: string;
+            errors?: Alert[];
+            warnings?: Alert[];
+        }
 
-
-declare namespace App {
-  interface Locals {
-    csrfToken: string | null;
-    errors: Set<Alert>;
-    user: User | null;
-  }
-
-  type Platform = Record<string, never>;
-
-  type Session = Locals;
-
-  type Stuff = Record<string, never>;
+        interface PageData {
+            language: Language;
+        }
+    }
 }

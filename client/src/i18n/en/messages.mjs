@@ -1,0 +1,1 @@
+/*eslint-disable*/export const messages={"auth.errors.invalid-credentials":"Wrong username or password.","general.errors.unexpected":"Something happened :(","testan":"translated!"};

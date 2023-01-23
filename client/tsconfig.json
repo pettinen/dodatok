@@ -1,28 +1,27 @@
 {
-  "extends": "./.svelte-kit/tsconfig.json",
-	"compilerOptions": {
-    "allowUnreachableCode": false,
-    "allowUnusedLabels": false,
-		"baseUrl": ".",
-    "exactOptionalPropertyTypes": true,
-    "forceConsistentCasingInFileNames": true,
-    "importsNotUsedAsValues": "error",
-		"isolatedModules": true,
-    "lib": [
-			"es2022",
-			"DOM",
-			"DOM.Iterable"
-		],
-		"moduleResolution": "node",
-		"module": "es2022",
-    "newLine": "LF",
-    "noImplicitOverride": true,
-    "noImplicitReturns": true,
-    "noUnusedLocals": true,
-    "noUnusedParameters": true,
-    "preserveValueImports": true,
-    "sourceMap": true,
-    "strict": true,
-		"target": "es2022"
-	}
+    "extends": "./.svelte-kit/tsconfig.json",
+    "compilerOptions": {
+        "declaration": true,
+        "exactOptionalPropertyTypes": true,
+        "forceConsistentCasingInFileNames": true,
+        "lib": ["es2022", "dom"],
+        "module": "es2022",
+        "newLine": "lf",
+        "noFallthroughCasesInSwitch": true,
+        "noImplicitOverride": true,
+        "noImplicitReturns": true,
+        "paths": {
+            "$helpers": ["helpers/build"],
+            "$i18n": ["src/i18n"],
+            "$i18n/*": ["src/i18n/*"],
+            "$lib": ["src/lib"],
+            "$lib/*": ["src/lib/*"],
+        },
+        "resolveJsonModule": true,
+        "skipLibCheck": true,
+        "sourceMap": true,
+        "strict": true,
+        "target": "es2022"
+    },
+    "include": ["**/*"]
 }

@@ -1,25 +1,21 @@
-{#if message.message === "general.update-available"}
-  <li>
-    {$_("general.update-available-prefix")}
-    <button class=link on:click={reload}>{$_("general.update-available-refresh")}</button>
-    {$_("general.update-available-suffix")}
-  </li>
-{:else if formatted}
-  <li>{formatted}</li>
-{/if}
+<script lang="ts">
+    import { tl } from "$i18n";
+    import type { InfoMessage } from "$lib/messages";
 
-<script lang=ts>
-  import { _ } from "svelte-i18n";
+    export let message: InfoMessage;
+    $: ({ message: messageString } = message);
 
-  import { formatInfoMessage } from "$lib/errors";
-  import type { InfoMessage } from "$lib/errors";
-
-
-  export let message: InfoMessage;
-
-  const reload = (): void => {
-    location.reload();
-  };
-
-  $: formatted = $formatInfoMessage(message);
+    const reload = () => {
+        location.reload();
+    };
 </script>
+
+{#if messageString === "general.update_available"}
+    <li>
+        <button class="link" type="button" on:click={reload}>
+            {$tl("general.update_available")}
+        </button>
+    </li>
+{:else}
+    <li>{messageString}</li>
+{/if}

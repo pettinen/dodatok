@@ -1,0 +1,8 @@
+msgid "auth.errors.invalid-credentials"
+msgstr "Wrong username or password."
+
+msgid "general.errors.unexpected"
+msgstr "Something happened :("
+
+msgid "testan"
+msgstr "translated!"

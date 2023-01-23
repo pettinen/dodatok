@@ -1,63 +1,67 @@
 import { dev } from "$app/environment";
 import { base } from "$app/paths";
 
-
-const apiHost = "api.kotori.lab:5000";
+const API_HOST = "http://localhost:5000";
 
 export const config = {
-  acceptedImageTypes: ["image/jpeg", "image/png", "image/webp"],
-  apiURL: `http://${apiHost}`,
-  baseURLs: {
-    files: "http://s3.kotori.lab:9000/files",
-    userIcon: "http://s3.kotori.lab:9000/user-icons",
-  },
-  cookies: {
-    csrfToken: "csrf_token",
-    rememberToken: "remember_token",
-    session: "session",
-    options: {
-      path: `${base}/`,
-      sameSite: "Lax",
-      secure: !dev,
+    accepted_image_types: ["image/jpeg", "image/png", "image/webp"],
+    api: {
+        path_prefix: "/api",
+        host: API_HOST,
     },
-  },
-  csrfTokenHeader: "CSRF-Token",
-  csrfTokenStorageKey: "csrf_token",
-  debounceTime: 500,
-  defaultMessageTimeout: 10_000,
-  defaultLocale: "en-US",
-  defaultUserIcon: "http://s3.kotori.lab:9000/files/default-user-icon.png",
-  locales: {
-    "en-US": "English (US)",
-    "fi-FI": "Suomi",
-  },
-  pages: {
-    authRequired: [`${base}/account`],
-    noAuthRequired: [`${base}/sign-up`],
-    index: `${base}/`,
-  },
-  totp: {
-    codeLength: 6,
-  },
-  validationRules: {
-    password: {
-      maxLength: 1000,
-      minLength: 8,
+    base_urls: {
+        files: "http://s3.kotori.lab:9000/files",
+        user_icon: "http://s3.kotori.lab:9000/user-icons",
     },
-    username: {
-      maxLength: 20,
-      minLength: 1,
+    cookies: {
+        csrf_token: "csrf_token",
+        remember_token: "remember_token",
+        session: "session",
+        options: {
+            path: `${base}/`,
+            same_site: "Lax",
+            secure: !dev,
+        },
     },
-    userIcon: {
-      maxDimensionRatio: 3,
-      maxSizeMB: 10,
-      minSize: 20,
+    csrf_token_header: "CSRF-Token",
+    csrf_token_storage_key: "csrf_token",
+    debounce_time: 500,
+    default_message_timeout: 10_000,
+    default_user_icon: "http://s3.kotori.lab:9000/files/default-user-icon.png",
+    pages: {
+        auth_required: [`${base}/account`],
+        no_auth_required: [`${base}/sign-up`],
+        index: `${base}/`,
     },
-  },
-  websocket: {
-    account: {
-      endpoint: `ws://${apiHost}/account/socket`,
-      tokenEndpoint: "/account/socket/token",
+    storage: {
+        local: {
+            language: {
+                key: "language",
+            },
+        },
     },
-  },
+    totp: {
+        code_length: 6,
+    },
+    validation_rules: {
+        password: {
+            max_length: 1000,
+            min_length: 8,
+        },
+        username: {
+            max_length: 20,
+            min_length: 1,
+        },
+        user_icon: {
+            max_dimension_ratio: 3,
+            max_size_mb: 10,
+            min_size_px: 20,
+        },
+    },
+    websocket: {
+        account: {
+            endpoint: `ws://${API_HOST}/account/socket`,
+            token_endpoint: "/account/socket/token",
+        },
+    },
 };

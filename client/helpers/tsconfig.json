@@ -1,0 +1,21 @@
+{
+    "compilerOptions": {
+        "declaration": true,
+        "exactOptionalPropertyTypes": true,
+        "forceConsistentCasingInFileNames": true,
+        "importsNotUsedAsValues": "error",
+        "lib": ["es2022"],
+        "module": "es2022",
+        "moduleResolution": "node",
+        "newLine": "lf",
+        "noFallthroughCasesInSwitch": true,
+        "noImplicitOverride": true,
+        "noImplicitReturns": true,
+        "outDir": "build",
+        "plugins": [{ "transform": "typia/lib/transform" }],
+        "removeComments": true,
+        "sourceMap": true,
+        "strict": true,
+        "target": "es2022"
+    }
+}
