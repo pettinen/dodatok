@@ -768,7 +768,7 @@ async fn login_totp_reuse() {
     let csrf_token = generate_token(ctx.config.csrf.token_length);
     let csrf_cookie = Cookie::new_with_str(&ctx.config.csrf.cookie, &csrf_token);
     let now = utc_now().timestamp() as u64;
-    let totp = generate_totp(&user.totp_key.unwrap(), now, &ctx.config);
+    let totp = generate_totp(user.totp_key.unwrap().as_bytes(), now, &ctx.config);
 
     let res = client
         .post("/auth/login")
@@ -825,7 +825,7 @@ async fn login_disabled() {
         .header(&ctx.config.csrf.header, &csrf_token)
         .send()
         .await;
-    check_response(&res, StatusCode::BAD_REQUEST);
+    check_response(&res, StatusCode::FORBIDDEN);
     assert_error(res, "auth", "account-disabled").await;
 }
 
@@ -857,13 +857,15 @@ async fn login_success_without_totp() {
     check_response(&res, StatusCode::OK);
     res.assert_json(json!({
         "csrf_token": row.get::<_, &str>("csrf_token"),
-        "user": {
-            "id": user.id,
-            "username": user.username,
-            "totp_enabled": false,
-            "password_change_reason": null,
-            "icon": null,
-            "locale": user.locale,
+        "data": {
+            "user": {
+                "id": user.id,
+                "username": user.username,
+                "totp_enabled": false,
+                "password_change_reason": null,
+                "icon": null,
+                "language": user.language,
+            },
             "sudo_until": row.get::<_, DateTime<Utc>>("sudo_until").to_rfc3339(),
         },
     }))
@@ -899,13 +901,15 @@ async fn login_success_unused_totp() {
     check_response(&res, StatusCode::OK);
     res.assert_json(json!({
         "csrf_token": row.get::<_, &str>("csrf_token"),
-        "user": {
-            "id": user.id,
-            "username": user.username,
-            "totp_enabled": false,
-            "password_change_reason": null,
-            "icon": null,
-            "locale": user.locale,
+        "data": {
+            "user": {
+                "id": user.id,
+                "username": user.username,
+                "totp_enabled": false,
+                "password_change_reason": null,
+                "icon": null,
+                "language": user.language,
+            },
             "sudo_until": row.get::<_, DateTime<Utc>>("sudo_until").to_rfc3339(),
         },
         "warnings": [{"source": "auth", "id": "unused-totp"}],
@@ -921,7 +925,7 @@ async fn login_success_with_totp() {
     let csrf_token = generate_token(ctx.config.csrf.token_length);
     let csrf_cookie = Cookie::new_with_str(&ctx.config.csrf.cookie, &csrf_token);
     let now = utc_now().timestamp() as u64;
-    let totp = generate_totp(&user.totp_key.unwrap(), now, &ctx.config);
+    let totp = generate_totp(user.totp_key.unwrap().as_bytes(), now, &ctx.config);
 
     let res = client
         .post("/auth/login")
@@ -944,13 +948,15 @@ async fn login_success_with_totp() {
     check_response(&res, StatusCode::OK);
     res.assert_json(json!({
         "csrf_token": row.get::<_, &str>("csrf_token"),
-        "user": {
-            "id": user.id,
-            "username": user.username,
-            "totp_enabled": true,
-            "password_change_reason": null,
-            "icon": null,
-            "locale": user.locale,
+        "data": {
+            "user": {
+                "id": user.id,
+                "username": user.username,
+                "totp_enabled": true,
+                "password_change_reason": null,
+                "icon": null,
+                "language": user.language,
+            },
             "sudo_until": row.get::<_, DateTime<Utc>>("sudo_until").to_rfc3339(),
         },
     }))

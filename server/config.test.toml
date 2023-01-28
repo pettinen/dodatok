@@ -14,20 +14,20 @@ header = "CSRF-Token"
 response_field = "csrf_token"
 
 [db]
-dbname = "dodatok"
-application_name = "dodatok"
-user = "dodatok"
+dbname = "(replaced by test name)"
+application_name = "(replaced by test name)"
+user = "(replaced by test name)"
 password = "dodatok"
 host = "db"
 port = 5432
 
 [dev]
 debug = true
-testing = false
+testing = true
 
 [dev.init_db]
 dbname = "postgres"
-application_name = "dodatok"
+application_name = "(replaced by test name)"
 user = "postgres"
 password = "pw"
 host = "db"
@@ -46,8 +46,8 @@ separator = "."
 
 [security]
 aes_key = "87428fc522803d31065e7bce3cf03fe475096631e5e07bbd7a0fde60c4cf25c7"
-argon2_memory_cost = 16384
-argon2_time_cost = 1
+argon2_memory_cost = 65536
+argon2_time_cost = 3
 argon2_parallelism = 4
 password_salt_bits = 128
 

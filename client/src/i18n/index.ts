@@ -52,6 +52,7 @@ const init_i18n = () => {
             return;
         }
         try {
+            console.log('loading language', lang);
             const [{ messages }, plurals] = await Promise.all([
                 import(`./${lang}/messages.mjs`) as Promise<Messages>,
                 import("make-plural/plurals"),
@@ -65,6 +66,7 @@ const init_i18n = () => {
     };
 
     const set_language = async (lang: Language) => {
+        console.log('changing to', lang);
         try {
             await load_language(lang);
         } catch (error) {

@@ -1,4 +1,3 @@
-use aes_gcm_siv::{aead::NewAead, Aes256GcmSiv};
 use deadpool_postgres::{
     tokio_postgres::{error::SqlState, NoTls},
     Config as DbConfig,
@@ -8,22 +7,21 @@ use serde::Serialize;
 
 use crate::{
     config::Config,
-    util::{blake2, encrypt, generate_token, generate_totp_key, hash_encrypt_password},
+    util::{encrypt, generate_token, generate_totp_key, hash, hash_encrypt_password},
 };
 use macros::sql_enum;
 
 #[allow(non_camel_case_types)]
 #[sql_enum]
-pub enum Locale {
+pub enum Language {
     #[name("en-US")]
     en_US,
-    #[name("fi-FI")]
-    fi_FI,
+    fi,
 }
 
 #[sql_enum]
 pub enum PasswordChangeReason {
-    SessionCompromise,
+    RememberTokenCompromise,
 }
 
 #[derive(PartialEq)]
@@ -62,7 +60,7 @@ pub async fn init_db(drop_existing: bool, config: &Config) {
     if let Err(err) = db
         .execute(
             &format!(
-                r#"CREATE DATABASE "{}""#, dbname
+                r#"CREATE DATABASE "{}" WITH OWNER "{}""#, dbname, user
             ),
             &[],
         )
@@ -97,14 +95,12 @@ pub async fn init_db(drop_existing: bool, config: &Config) {
     let pool = init_config.create_pool(None, NoTls).unwrap();
     let db = pool.get().await.unwrap();
 
-    let aes = Aes256GcmSiv::new_from_slice(&config.security.aes_key).unwrap();
-
-    let password_hash_length = hash_encrypt_password("a", &aes, config).unwrap().len();
-    let totp_key_length = encrypt(&generate_totp_key(config), &aes, &mut rand::thread_rng())
+    let password_hash_length = hash_encrypt_password("a", config).unwrap().len();
+    let totp_key_length = encrypt(&generate_totp_key(config), &config, &mut rand::thread_rng())
         .unwrap()
         .len();
 
-    let locales = enum_variants(Locale::variants());
+    let languages = enum_variants(Language::variants());
     let password_change_reasons = enum_variants(PasswordChangeReason::variants());
     let permissions = enum_variants(Permission::variants());
 
@@ -117,7 +113,7 @@ pub async fn init_db(drop_existing: bool, config: &Config) {
                 "new_totp_keys",
                 "permissions",
                 "users";
-            DROP TYPE IF EXISTS "locale", "password_change_reason", "permission";
+            DROP TYPE IF EXISTS "language", "password_change_reason", "permission";
             "#,
         )
         .await
@@ -127,7 +123,7 @@ pub async fn init_db(drop_existing: bool, config: &Config) {
     db.batch_execute(&format!(
         r#"
         DO $$ BEGIN
-            CREATE TYPE "locale" AS ENUM({locales});
+            CREATE TYPE "language" AS ENUM({languages});
         EXCEPTION
             WHEN duplicate_object THEN null;
         END $$;
@@ -145,10 +141,10 @@ pub async fn init_db(drop_existing: bool, config: &Config) {
             ),
             "password" bytea NOT NULL CHECK (length("password") = {password_hash_length}),
             "totp_key" bytea CHECK (length("totp_key") = {totp_key_length}),
-            "last_used_totp" text CHECK (length("last_used_totp") = {totp_digits}),
+            "last_totp_time_step" bigint,
             "password_change_reason" password_change_reason,
             "icon" text CHECK (length("icon") = {icon_id_length}),
-            "locale" locale NOT NULL
+            "language" language NOT NULL
         );
         CREATE UNIQUE INDEX IF NOT EXISTS "users_username_key" ON "users" (lower("username"));
 
@@ -170,13 +166,13 @@ pub async fn init_db(drop_existing: bool, config: &Config) {
         );
 
         CREATE TABLE IF NOT EXISTS "remember_tokens" (
-            "id" bytea PRIMARY KEY CHECK (length("id") = {blake2_output_length}),
+            "id" bytea PRIMARY KEY CHECK (length("id") = {hash_output_length}),
             "user_id" text NOT NULL REFERENCES "users"("id") ON DELETE CASCADE,
-            "secret" bytea NOT NULL CHECK (length("secret") = {blake2_output_length})
+            "secret" bytea NOT NULL CHECK (length("secret") = {hash_output_length})
         );
 
         CREATE TABLE IF NOT EXISTS "sessions" (
-            "id" bytea PRIMARY KEY CHECK (length("id") = {blake2_output_length}),
+            "id" bytea PRIMARY KEY CHECK (length("id") = {hash_output_length}),
             "user_id" text NOT NULL REFERENCES "users"("id") ON DELETE CASCADE,
             "csrf_token" text NOT NULL CHECK (length("csrf_token") = {csrf_token_length}),
             "expires" timestamp(0) with time zone NOT NULL,
@@ -186,9 +182,8 @@ pub async fn init_db(drop_existing: bool, config: &Config) {
         user_id_length = config.user.id_length,
         username_min_length = config.user.username_min_length,
         username_max_length = config.user.username_max_length,
-        totp_digits = config.totp.digits,
         icon_id_length = config.user.icon_id_length,
-        blake2_output_length = blake2("").len(),
+        hash_output_length = hash("").len(),
         csrf_token_length = config.csrf.token_length,
     ))
     .await
@@ -202,19 +197,23 @@ pub async fn init_db(drop_existing: bool, config: &Config) {
     .unwrap();
 }
 
-pub async fn populate_db(config: &Config, aes: &Aes256GcmSiv) {
+pub async fn populate_db(config: &Config) {
     let pool = config.db.create_pool(None, NoTls).unwrap();
     let db = pool.get().await.unwrap();
 
-    let user_id = generate_token(config.user.id_length);
-    let password_hash = hash_encrypt_password("b", &aes, config).unwrap();
+    let user_id1 = generate_token(config.user.id_length);
+    let user_id2 = generate_token(config.user.id_length);
+    let password_hash1 = hash_encrypt_password("b", config).unwrap();
+    let password_hash2 = hash_encrypt_password("password", config).unwrap();
+
     if let Err(err) = db
         .execute(
             r#"
-            INSERT INTO "users"("id", "active", "username", "password", "locale") VALUES
-                ($1, true, 'a', $2, 'en-US');
+            INSERT INTO "users"("id", "active", "username", "password", "totp_key", "language") VALUES
+                ($1, true, 'a', $2, NULL, 'en-US'),
+                ($3, true, 'b', $4, 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA', 'en-US');
             "#,
-            &[&user_id, &password_hash],
+            &[&user_id1, &password_hash1, &user_id2, &password_hash2],
         )
         .await
     {

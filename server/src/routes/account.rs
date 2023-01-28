@@ -8,14 +8,14 @@ use serde_json::json;
 
 use crate::{
     config::Config,
-    error::{Forbidden, InternalError},
+    error::{AuthError, InternalError},
     middleware::{AuthRequired, Csrf, CurrentUser},
     util::{base64_urlsafe, generate_token, json_response, redis_join},
     websocket::{websocket_receiver, AccountConnections, AccountRooms},
 };
 
 #[handler]
-async fn websocket(
+fn websocket(
     config: Data<&Config>,
     req: &poem::Request,
     websocket: WebSocket,
@@ -24,7 +24,7 @@ async fn websocket(
     redis: Data<&RedisClient>,
 ) -> Result<impl IntoResponse> {
     if req.headers().get("Origin") != Some(&config.client.origin) {
-        Err(Forbidden)?;
+        return Err(AuthError::Forbidden(None).into());
     }
 
     let connections = connections.clone();
@@ -60,7 +60,8 @@ async fn websocket_token(
         .await
         .map_err(InternalError::new)?;
     json_response(json!({
-        "token": token,
+        "success": true,
+        "data": token,
     }))
 }
 
@@ -87,12 +88,15 @@ async fn websocket_clients(
         .collect();
 
     json_response(json!({
-        "connections": connections,
-        "rooms": rooms,
+        "success": true,
+        "data": {
+            "connections": connections,
+            "rooms": rooms,
+        },
     }))
 }
 
-pub fn routes(config: Config) -> Route {
+pub fn routes(config: &Config) -> Route {
     Route::new()
         .at("/socket", get(websocket))
         .at("/socket/clients", get(websocket_clients))

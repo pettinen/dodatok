@@ -29,8 +29,7 @@
 
 {#if !isLoading}
     <Navbar />
-    {is_language("it")}
-    {is_language("fi")}
+    <button type="button" on:click={() => console.log("hiii~ :3")}>asdf</button>
     <slot />
 
     {#if got_errors || got_warnings || got_info_messages}

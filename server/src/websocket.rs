@@ -12,7 +12,7 @@ use tokio::{
 
 use crate::{
     config::Config,
-    error::{AuthError, GeneralError, InternalError, WebSocketError},
+    error::{AuthError, ErrorData, GeneralError, InternalError, WebSocketError},
     util::{generate_token, redis_join},
 };
 
@@ -95,7 +95,7 @@ impl WebSocketConnection {
         rooms: &AccountRooms,
     ) -> Result<(), WebSocketError> {
         if self.room_handles.contains_key(&room) {
-            return Err(WebSocketError::AlreadyInRoom);
+            return Err(WebSocketError::AlreadyInRoom(None));
         }
         let mut rooms = rooms.lock().await;
         let mut receiver = match rooms.get(&room) {
@@ -137,7 +137,7 @@ impl WebSocketConnection {
             }
             Ok(())
         } else {
-            Err(WebSocketError::NotInRoom)
+            Err(WebSocketError::NotInRoom(None))
         }
     }
 
@@ -160,7 +160,10 @@ impl WebSocketConnection {
 
 fn get_event(message: String) -> Result<AccountEvent, GeneralError> {
     serde_json::from_str::<AccountEvent>(&message)
-        .map_err(|err| GeneralError::InvalidData(err.to_string()))
+        .map_err(|err| GeneralError::InvalidData(Some(ErrorData {
+            details: Some(err.to_string()),
+            ..Default::default()
+        })))
 }
 
 pub async fn websocket_receiver(
@@ -190,7 +193,7 @@ pub async fn websocket_receiver(
             Message::Ping(_) | Message::Pong(_) => continue,
             Message::Binary(_) => {
                 if connection
-                    .send_error(WebSocketError::InvalidMessageType)
+                    .send_error(WebSocketError::InvalidMessageType(None))
                     .await
                     .is_err()
                 {
@@ -231,7 +234,7 @@ pub async fn websocket_receiver(
             },
             Err(_) => {
                 if connection
-                    .send_error(AuthError::InvalidCredentials)
+                    .send_error(AuthError::InvalidCredentials(None))
                     .await
                     .is_err()
                 {
@@ -299,7 +302,7 @@ pub async fn websocket_receiver(
                 Message::Ping(_) | Message::Pong(_) => continue,
                 Message::Binary(_) => {
                     if connection
-                        .send_error(WebSocketError::InvalidMessageType)
+                        .send_error(WebSocketError::InvalidMessageType(None))
                         .await
                         .is_err()
                     {
@@ -322,7 +325,7 @@ pub async fn websocket_receiver(
             match event {
                 AccountEvent::Authenticate(_) => {
                     if connection
-                        .send_error(AuthError::AlreadyLoggedIn)
+                        .send_error(AuthError::AlreadyLoggedIn(None))
                         .await
                         .is_err()
                     {

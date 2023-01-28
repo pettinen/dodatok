@@ -1,4 +1,3 @@
-use aes_gcm_siv::Aes256GcmSiv;
 use deadpool_postgres::Pool;
 use poem::{
     handler, post,
@@ -11,12 +10,13 @@ use serde_json::json;
 
 use crate::{
     config::Config,
-    db::{Locale, PasswordChangeReason},
-    error::{AuthError, AuthWarning, BadRequest, InternalError},
+    db::{Language, PasswordChangeReason},
+    error::{AuthError, AuthWarning, ErrorData, InternalError},
     middleware::{AuthRequired, AuthRequiredOptions, Csrf, CurrentUser},
     util::{
-        blake2, build_json_response, decrypt, generate_token, get, get_session, optional,
-        remove_cookie, set_cookie, utc_now, verify_password, verify_totp, Session, SessionError,
+        build_json_response, clear_cookie, decrypt, generate_token, get, get_session, hash,
+        optional, remove_cookie, set_cookie, utc_now, verify_password, verify_totp, Session,
+        SessionError, VerifyTotpError,
     },
 };
 
@@ -32,7 +32,11 @@ async fn get_csrf_token(config: Data<&Config>, req: &Request) -> Result<Response
         Some(csrf_token) => csrf_token,
         None => generate_token(config.csrf.token_length),
     };
-    build_json_response(json!({ &config.csrf.response_field: csrf_token }), |res| {
+    build_json_response(json!({
+        "success": true,
+        "data": null,
+        &config.csrf.response_field: csrf_token,
+    }), |res| {
         let res = set_cookie(
             res,
             &config.csrf.cookie,
@@ -61,25 +65,44 @@ struct LoginData {
 #[handler]
 async fn login(
     config: Data<&Config>,
-    aes: Data<&Aes256GcmSiv>,
     db: Data<&Pool>,
     req: &Request,
     Json(data): Json<LoginData>,
 ) -> Result<Response> {
-    let error_response = |error: AuthError, clear_session_cookie: bool| {
-        let res = BadRequest::new(error, &config);
-        if clear_session_cookie {
-            res.remove_cookie(&config.session.cookie)
+    let error = |error: AuthError, delete_session_cookie: bool| {
+        let data = if delete_session_cookie {
+            Some(ErrorData {
+                cookies: vec![clear_cookie(&config.session.cookie, &config)],
+                ..Default::default()
+            })
         } else {
-            res
+            Some(ErrorData::default())
+        };
+        Err(match error {
+            AuthError::AccountDisabled(_) => AuthError::AccountDisabled(data),
+            AuthError::AlreadyLoggedIn(_) => AuthError::AlreadyLoggedIn(data),
+            AuthError::Forbidden(_) => AuthError::Forbidden(data),
+            AuthError::InvalidCredentials(_) => AuthError::InvalidCredentials(data),
+            AuthError::InvalidRememberToken(_) => AuthError::InvalidRememberToken(data),
+            AuthError::InvalidTotp(_) => AuthError::InvalidTotp(data),
+            AuthError::MissingRememberToken(_) => AuthError::MissingRememberToken(data),
+            AuthError::MissingTotp(_) => AuthError::MissingTotp(data),
+            AuthError::NotLoggedIn(_) => AuthError::NotLoggedIn(data),
+            AuthError::PasswordChangeRequired(_) => AuthError::PasswordChangeRequired(data),
+            AuthError::RememberTokenSecretMismatch(_) => {
+                AuthError::RememberTokenSecretMismatch(data)
+            }
+            AuthError::SessionExpired(_) => AuthError::SessionExpired(data),
+            AuthError::TotpReuse(_) => AuthError::TotpReuse(data),
         }
+        .into())
     };
 
     let clear_session_cookie = match get_session(req, &config).await {
-        Ok(_) => Err(error_response(AuthError::AlreadyLoggedIn, false))?,
+        Ok(_) => return Err(AuthError::AlreadyLoggedIn(None).into()),
         Err(SessionError::ExpiredSession) | Err(SessionError::InvalidSession) => true,
         Err(SessionError::NoCookie) => false,
-        Err(SessionError::InternalError(err)) => Err(err)?,
+        Err(SessionError::InternalError(err)) => return Err(err.into()),
     };
 
     let mut warnings = Vec::<AuthWarning>::new();
@@ -92,23 +115,24 @@ async fn login(
             "username",
             "password",
             "totp_key",
-            "last_used_totp",
+            "last_totp_time_step",
             "password_change_reason",
             "icon",
-            "locale"
+            "language"
         FROM "users" WHERE lower("username") = lower($1)
     "#;
     let user = db
         .query_opt(select_query, &[&data.username])
         .await
-        .map_err(InternalError::new)?
-        .ok_or_else(|| error_response(AuthError::InvalidCredentials, clear_session_cookie))?;
+        .map_err(InternalError::new)?;
 
-    if !verify_password(&data.password, user.get("password"), &aes)? {
-        Err(error_response(
-            AuthError::InvalidCredentials,
-            clear_session_cookie,
-        ))?;
+    let Some(user) = user else {
+        return error(AuthError::InvalidCredentials(None), clear_session_cookie);
+    };
+
+    if !verify_password(&data.password, user.get("password"), &config)? {
+        tracing::warn!("invalid password, returning error");
+        return error(AuthError::InvalidCredentials(None), clear_session_cookie);
     }
 
     let user_id = user.get::<_, &str>("id");
@@ -117,44 +141,49 @@ async fn login(
     let totp_enabled = if let Some(encrypted_totp_key) = user.get("totp_key") {
         let totp = match data.totp {
             Some(totp) => totp,
-            None => Err(error_response(AuthError::MissingTotp, clear_session_cookie))?,
+            None => return error(AuthError::MissingTotp(None), clear_session_cookie),
         };
-        let totp_key = decrypt(encrypted_totp_key, &aes)?;
-        if !verify_totp(&totp_key, &totp, &config) {
-            Err(error_response(AuthError::InvalidTotp, clear_session_cookie))?;
-        }
-        if let Some(last_used_totp) = user.get::<_, Option<String>>("last_used_totp") {
-            if SecStr::from(totp.as_bytes()) == SecStr::from(last_used_totp) {
-                Err(error_response(AuthError::TotpReuse, clear_session_cookie))?;
+        let totp_key = decrypt(encrypted_totp_key, &config)?;
+        let totp_time_step = verify_totp(&totp_key, &totp, &config);
+        let totp_time_step = match totp_time_step {
+            Ok(totp_time_step) => totp_time_step,
+            Err(VerifyTotpError::InvalidTotp) => {
+                return error(AuthError::InvalidTotp(None), clear_session_cookie)
+            }
+            Err(VerifyTotpError::InternalError(err)) => return Err(err.into()),
+        };
+
+        if let Some(last_totp_time_step) = user.get::<_, Option<i64>>("last_totp_time_step")
+        {
+            if totp_time_step <= last_totp_time_step {
+                return error(AuthError::TotpReuse(None), clear_session_cookie);
             }
         }
+
         let updated = transaction
             .execute(
-                r#"UPDATE "users" SET "last_used_totp" = $1 WHERE "id" = $2"#,
-                &[&totp, &user_id],
+                r#"UPDATE "users" SET "last_totp_time_step" = $1 WHERE "id" = $2"#,
+                &[&totp_time_step, &user_id],
             )
             .await
             .map_err(InternalError::new)?;
         if updated != 1 {
             Err(InternalError::new(format!(
-                "last_used_totp updated for {} users in login",
+                "last_totp_time_step updated for {} users in login",
                 updated
             )))?;
         }
 
         true
     } else if data.totp.is_some() {
-        warnings.push(AuthWarning::UnusedTotp);
+        warnings.push(AuthWarning::UnusedTotp(None));
         false
     } else {
         false
     };
 
     if !user.get::<_, bool>("active") {
-        Err(error_response(
-            AuthError::AccountDisabled,
-            clear_session_cookie,
-        ))?;
+        return error(AuthError::AccountDisabled(None), clear_session_cookie);
     }
 
     let session_id = generate_token(config.session.id_length);
@@ -171,7 +200,7 @@ async fn login(
         .execute(
             insert_session_query,
             &[
-                &blake2(&session_id),
+                &hash(&session_id),
                 &user_id,
                 &csrf_token,
                 &session_expires,
@@ -190,7 +219,7 @@ async fn login(
     let remember_token = if data.remember {
         let remember_token_id = generate_token(config.remember_token.id_length);
         let remember_token_secret = generate_token(config.remember_token.secret_length);
-        let remember_token_secret_hash = blake2(&remember_token_secret);
+        let remember_token_secret_hash = hash(&remember_token_secret);
 
         let insert_remember_token_query = r#"
                 INSERT INTO "remember_tokens"("id", "user_id", "secret") VALUES ($1, $2, $3)
@@ -199,7 +228,7 @@ async fn login(
             .execute(
                 insert_remember_token_query,
                 &[
-                    &blake2(&remember_token_id),
+                    &hash(&remember_token_id),
                     &user_id,
                     &remember_token_secret_hash,
                 ],
@@ -220,8 +249,9 @@ async fn login(
     transaction.commit().await.map_err(InternalError::new)?;
 
     let mut response_json = json!({
+        "success": true,
         &config.csrf.response_field: csrf_token,
-        "user": {
+        "data": {
             "id": user.get::<_, &str>("id"),
             "username": user.get::<_, &str>("username"),
             "totp_enabled": totp_enabled,
@@ -229,9 +259,9 @@ async fn login(
                 "password_change_reason"
             ),
             "icon": user.get::<_, Option<&str>>("icon"),
-            "locale": user.get::<_, Locale>("locale"),
-            "sudo_until": sudo_until.to_rfc3339(),
+            "language": user.get::<_, Language>("language"),
         },
+        "sudo_until": sudo_until.to_rfc3339(),
     });
     if warnings.len() > 0 {
         if let Some(map) = response_json.as_object_mut() {
@@ -295,7 +325,7 @@ async fn logout(
             let deleted = transaction
                 .execute(
                     r#"DELETE FROM "remember_tokens" WHERE "id" = $1"#,
-                    &[&blake2(remember_token_id)],
+                    &[&hash(remember_token_id)],
                 )
                 .await
                 .map_err(InternalError::new)?;
@@ -312,7 +342,11 @@ async fn logout(
 
     let csrf_token = generate_token(config.csrf.token_length);
 
-    build_json_response(json!({ &config.csrf.response_field: csrf_token }), |res| {
+    build_json_response(json!({
+        "success": true,
+        "data": null,
+        &config.csrf.response_field: csrf_token,
+    }), |res| {
         let res = set_cookie(
             res,
             &config.csrf.cookie,
@@ -365,7 +399,11 @@ async fn logout_all_sessions(
 
     let csrf_token = generate_token(config.csrf.token_length);
 
-    build_json_response(json!({ &config.csrf.response_field: csrf_token }), |res| {
+    build_json_response(json!({
+        "success": true,
+        "data": null,
+        &config.csrf.response_field: csrf_token
+    }), |res| {
         let mut res = set_cookie(
             res,
             &config.csrf.cookie,
@@ -386,40 +424,95 @@ async fn restore_session(
     cookies: &CookieJar,
     db: Data<&Pool>,
 ) -> Result<Response> {
-    let error_response =
-        |error: AuthError, delete_remember_cookie: bool, delete_session_cookie: bool| {
-            let mut res = BadRequest::new(error, &config);
-            if delete_remember_cookie {
-                res = res.remove_cookie(&config.remember_token.cookie);
+    let error = |error: AuthError, delete_remember_cookie: bool, delete_session_cookie: bool| {
+        let mut cookies = vec![];
+        if delete_remember_cookie {
+            cookies.push(clear_cookie(&config.remember_token.cookie, &config));
+        }
+        if delete_session_cookie {
+            cookies.push(clear_cookie(&config.session.cookie, &config));
+        }
+        Err(match error {
+            AuthError::AccountDisabled(_) => AuthError::AccountDisabled(Some(ErrorData {
+                cookies,
+                ..Default::default()
+            })),
+            AuthError::AlreadyLoggedIn(_) => AuthError::AlreadyLoggedIn(Some(ErrorData {
+                cookies,
+                ..Default::default()
+            })),
+            AuthError::Forbidden(_) => AuthError::Forbidden(Some(ErrorData {
+                cookies,
+                ..Default::default()
+            })),
+            AuthError::InvalidCredentials(_) => AuthError::InvalidCredentials(Some(ErrorData {
+                cookies,
+                ..Default::default()
+            })),
+            AuthError::InvalidRememberToken(_) => {
+                AuthError::InvalidRememberToken(Some(ErrorData {
+                    cookies,
+                    ..Default::default()
+                }))
             }
-            if delete_session_cookie {
-                res = res.remove_cookie(&config.session.cookie);
+            AuthError::InvalidTotp(_) => AuthError::InvalidTotp(Some(ErrorData {
+                cookies,
+                ..Default::default()
+            })),
+            AuthError::MissingRememberToken(_) => {
+                AuthError::MissingRememberToken(Some(ErrorData {
+                    cookies,
+                    ..Default::default()
+                }))
             }
-            res.into()
-        };
+            AuthError::MissingTotp(_) => AuthError::MissingTotp(Some(ErrorData {
+                cookies,
+                ..Default::default()
+            })),
+            AuthError::NotLoggedIn(_) => AuthError::NotLoggedIn(Some(ErrorData {
+                cookies,
+                ..Default::default()
+            })),
+            AuthError::PasswordChangeRequired(_) => {
+                AuthError::PasswordChangeRequired(Some(ErrorData {
+                    cookies,
+                    ..Default::default()
+                }))
+            }
+            AuthError::RememberTokenSecretMismatch(_) => {
+                AuthError::RememberTokenSecretMismatch(Some(ErrorData {
+                    cookies,
+                    ..Default::default()
+                }))
+            }
+            AuthError::SessionExpired(_) => AuthError::SessionExpired(Some(ErrorData {
+                cookies,
+                ..Default::default()
+            })),
+            AuthError::TotpReuse(_) => AuthError::TotpReuse(Some(ErrorData {
+                cookies,
+                ..Default::default()
+            })),
+        }
+        .into())
+    };
 
     if cookies.get(&config.session.cookie).is_some() {
-        return Err(error_response(AuthError::AlreadyLoggedIn, false, false));
+        return Err(AuthError::AlreadyLoggedIn(None).into());
     }
 
     let remember_cookie = match cookies.get(&config.remember_token.cookie) {
         Some(remember_cookie) => remember_cookie,
-        None => {
-            return Err(error_response(
-                AuthError::MissingRememberToken,
-                false,
-                false,
-            ))
-        }
+        None => return Err(AuthError::MissingRememberToken(None).into()),
     };
     let (remember_token_id, remember_token_secret) = match remember_cookie
         .value_str()
         .split_once(&config.remember_token.separator)
     {
         Some(parts) => parts,
-        None => return Err(error_response(AuthError::InvalidRememberToken, true, false)),
+        None => return error(AuthError::InvalidRememberToken(None), true, false),
     };
-    let remember_token_id_hash = blake2(remember_token_id);
+    let remember_token_id_hash = hash(remember_token_id);
 
     let mut db = db.get().await.map_err(InternalError::new)?;
     let transaction = db.transaction().await.map_err(InternalError::new)?;
@@ -436,12 +529,14 @@ async fn restore_session(
     let data = transaction
         .query_opt(query, &[&remember_token_id_hash])
         .await
-        .map_err(InternalError::new)?
-        .ok_or_else(|| error_response(AuthError::InvalidRememberToken, true, false))?;
+        .map_err(InternalError::new)?;
+    let Some(data) = data else {
+        return error(AuthError::InvalidRememberToken(None), true, false);
+    };
 
     let user_id = data.get::<_, String>("user_id");
 
-    if SecStr::from(blake2(remember_token_secret)) != SecStr::from(data.get::<_, &[u8]>("secret")) {
+    if SecStr::from(hash(remember_token_secret)) != SecStr::from(data.get::<_, &[u8]>("secret")) {
         // Possible session hijack attempt, invalidate sessions
         if let Err(err) = transaction
             .execute(
@@ -464,7 +559,7 @@ async fn restore_session(
         match transaction
             .execute(
                 r#"
-                UPDATE "users" SET "password_change_reason" = 'session_compromise'
+                UPDATE "users" SET "password_change_reason" = 'remember_token_compromise'
                 WHERE "id" = $1
             "#,
                 &[&user_id],
@@ -486,20 +581,20 @@ async fn restore_session(
             InternalError::new(err);
         }
         let delete_session_cookie = cookies.get(&config.session.cookie).is_some();
-        return Err(error_response(
-            AuthError::RememberTokenSecretMismatch,
+        return error(
+            AuthError::RememberTokenSecretMismatch(None),
             true,
             delete_session_cookie,
-        ));
+        );
     }
 
     if !data.get::<_, bool>("active") {
         let delete_session_cookie = cookies.get(&config.session.cookie).is_some();
-        return Err(error_response(
-            AuthError::AccountDisabled,
+        return error(
+            AuthError::AccountDisabled(None),
             true,
             delete_session_cookie,
-        ));
+        );
     }
 
     let csrf_token = generate_token(config.csrf.token_length);
@@ -511,12 +606,7 @@ async fn restore_session(
                 INSERT INTO "sessions"("id", "user_id", "csrf_token", "expires", "sudo_until")
                     VALUES ($1, $2, $3, $4, NULL)
             "#,
-            &[
-                &blake2(&session_id),
-                &user_id,
-                &csrf_token,
-                &session_expires,
-            ],
+            &[&hash(&session_id), &user_id, &csrf_token, &session_expires],
         )
         .await
         .map_err(InternalError::new)?;
@@ -525,7 +615,7 @@ async fn restore_session(
     transaction
         .execute(
             r#"UPDATE "remember_tokens" SET "secret" = $1 WHERE "id" = $2"#,
-            &[&blake2(&new_secret), &remember_token_id_hash],
+            &[&hash(&new_secret), &remember_token_id_hash],
         )
         .await
         .map_err(InternalError::new)?;
@@ -550,7 +640,7 @@ async fn restore_session(
     })
 }
 
-pub fn routes(config: Config) -> Route {
+pub fn routes(config: &Config) -> Route {
     Route::new()
         .at("/csrf-token", get!(get_csrf_token))
         .at("/login", post(login.with(Csrf::new(config.clone()))))

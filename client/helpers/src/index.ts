@@ -51,7 +51,11 @@ export interface User {
     icon: string | null;
     language: Language;
 }
-export const is_user_response = createEquals<SuccessResponse<User>>();
+interface UserResponse {
+    user: User | null;
+    sudo_until?: string;
+}
+export const is_user_response = createEquals<SuccessResponse<UserResponse>>();
 
 interface TotpKey {
     expires: string;

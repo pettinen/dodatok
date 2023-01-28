@@ -1,7 +1,7 @@
 import { dev } from "$app/environment";
 import { base } from "$app/paths";
 
-const API_HOST = "http://localhost:5000";
+const API_HOST = "http://localhost:8000";
 
 export const config = {
     accepted_image_types: ["image/jpeg", "image/png", "image/webp"],

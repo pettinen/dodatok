@@ -97,15 +97,6 @@ const create_alert_store = (type: AlertType): AlertStore => {
 export const errors = create_alert_store("error");
 export const warnings = create_alert_store("warning");
 
-export type JSONPrimitive =
-    | string
-    | number
-    | symbol
-    | bigint
-    | boolean
-    | Date
-    | object;
-
 export const got_errors: Readable<
     (...searches: Array<RegExp | string>) => boolean
 > = derived(

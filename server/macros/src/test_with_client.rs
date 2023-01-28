@@ -58,8 +58,7 @@ impl ToTokens for TestWithClient {
                 }
 
                 async fn teardown(self) {
-                    let mut db_config = self.config.db.clone();
-                    db_config.dbname = Some("postgres".to_owned());
+                    let mut db_config = self.config.dev.init_db.unwrap();
                     let pool = db_config.create_pool(None, NoTls).unwrap();
                     let db = pool.get().await.unwrap();
                     if let Err(err) = db.execute(&format!("DROP DATABASE {} (FORCE)", #name), &[]).await {

@@ -18,7 +18,7 @@ import { get_preferred_language } from "$lib/utils";
 console.log("hello from hooks.server.ts");
 
 const { log } = console;
-
+log(languages);
 await Promise.all(languages.map(load_language));
 
 const get_cookies_from_response = (response: Response) => {
